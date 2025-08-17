@@ -1,15 +1,17 @@
-# src/name_address_validator/app.py - FIXED for Streamlit Cloud
+# src/name_address_validator/app.py - Enhanced with Bulk Validation Tab
 """
-Streamlit web application for name and address validation
-FIXED: Works with both local development and Streamlit Cloud deployment
+Enhanced Streamlit web application for name and address validation
+NEW: Added bulk validation tab with tabular input/output
 """
 
 import streamlit as st
+import pandas as pd
 import time
 import sys
 import os
+import io
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from pathlib import Path
 
 # Fix Python path for both local and Streamlit Cloud environments
@@ -111,8 +113,6 @@ class DebugLogger:
         if self.logs:
             st.subheader("🔍 Debug Logs")
             st.code("\n".join(self.logs), language="text")
-        else:
-            st.info("No debug logs yet. Enable debug mode and run validation.")
 
 
 def load_usps_credentials() -> Tuple[Optional[str], Optional[str]]:
@@ -135,8 +135,552 @@ def load_usps_credentials() -> Tuple[Optional[str], Optional[str]]:
     return None, None
 
 
+def safe_extract(value):
+    """Safely extract string value, handling NaN and None"""
+    if pd.isna(value) or value is None or str(value).lower() == 'nan':
+        return ''
+    return str(value).strip()
+
+
+def validate_single_record(name_validator, address_validator, record: Dict, debug_logger) -> Dict:
+    """Validate a single name/address record"""
+    
+    try:
+        # Extract data and handle NaN/empty values safely
+        first_name = safe_extract(record.get('first_name', ''))
+        last_name = safe_extract(record.get('last_name', ''))
+        street_address = safe_extract(record.get('street_address', ''))
+        city = safe_extract(record.get('city', ''))
+        state = safe_extract(record.get('state', '')).upper()
+        zip_code = safe_extract(record.get('zip_code', ''))
+        
+        # Validate name
+        name_result = name_validator.validate(first_name, last_name)
+        
+        # Validate address
+        address_data = {
+            'street_address': street_address,
+            'city': city,
+            'state': state,
+            'zip_code': zip_code
+        }
+        address_result = address_validator.validate_address(address_data)
+        
+        # Compile results
+        result = {
+            'original_first_name': first_name,
+            'original_last_name': last_name,
+            'original_street_address': street_address,
+            'original_city': city,
+            'original_state': state,
+            'original_zip_code': zip_code,
+            
+            # Name validation results
+            'name_valid': name_result['valid'],
+            'name_confidence': name_result['confidence'],
+            'name_errors': '; '.join(name_result['errors']) if name_result['errors'] else '',
+            'name_warnings': '; '.join(name_result['warnings']) if name_result['warnings'] else '',
+            'normalized_first_name': name_result['normalized']['first_name'],
+            'normalized_last_name': name_result['normalized']['last_name'],
+            
+            # Address validation results
+            'address_valid': address_result.get('success', False),
+            'address_deliverable': address_result.get('deliverable', False),
+            'address_confidence': address_result.get('confidence', 0.0),
+            'address_error': address_result.get('error', ''),
+            'standardized_street_address': '',
+            'standardized_city': '',
+            'standardized_state': '',
+            'standardized_zip_code': '',
+            
+            # Overall status
+            'overall_status': '',
+            'suggestions': '',
+        }
+        
+        # Add standardized address if available
+        if address_result.get('standardized'):
+            std = address_result['standardized']
+            result['standardized_street_address'] = std.get('street_address', '')
+            result['standardized_city'] = std.get('city', '')
+            result['standardized_state'] = std.get('state', '')
+            result['standardized_zip_code'] = std.get('zip_code', '')
+        
+        # Determine overall status
+        if result['name_valid'] and result['address_deliverable']:
+            result['overall_status'] = '✅ Valid'
+        elif result['name_valid'] and result['address_valid']:
+            result['overall_status'] = '⚠️ Name Valid, Address Uncertain'
+        elif result['name_valid']:
+            result['overall_status'] = '❌ Name Valid, Address Invalid'
+        elif result['address_deliverable']:
+            result['overall_status'] = '❌ Address Valid, Name Invalid'
+        else:
+            result['overall_status'] = '❌ Both Invalid'
+        
+        # Compile suggestions
+        suggestions = []
+        
+        # Name suggestions
+        if name_result.get('suggestions'):
+            for field, field_suggestions in name_result['suggestions'].items():
+                if field_suggestions:
+                    best_suggestion = field_suggestions[0]
+                    suggestions.append(f"{field.replace('_', ' ').title()}: {best_suggestion['suggestion']}")
+        
+        # Address suggestions (basic)
+        if not result['address_deliverable'] and result['address_error']:
+            suggestions.append(f"Address: {result['address_error']}")
+        
+        result['suggestions'] = '; '.join(suggestions[:3])  # Limit to top 3
+        
+        return result
+        
+    except Exception as e:
+        debug_logger.log(f"❌ Error validating record: {e}")
+        return {
+            'original_first_name': safe_extract(record.get('first_name', '')),
+            'original_last_name': safe_extract(record.get('last_name', '')),
+            'original_street_address': safe_extract(record.get('street_address', '')),
+            'original_city': safe_extract(record.get('city', '')),
+            'original_state': safe_extract(record.get('state', '')),
+            'original_zip_code': safe_extract(record.get('zip_code', '')),
+            'overall_status': f'❌ Error: {str(e)[:50]}...',
+            'suggestions': 'Fix data format and try again',
+            'name_valid': False,
+            'address_deliverable': False,
+            'name_confidence': 0.0,
+            'address_confidence': 0.0,
+            'name_errors': str(e),
+            'name_warnings': '',
+            'address_error': str(e),
+            'normalized_first_name': '',
+            'normalized_last_name': '',
+            'standardized_street_address': '',
+            'standardized_city': '',
+            'standardized_state': '',
+            'standardized_zip_code': ''
+        }
+
+
+def render_bulk_validation_tab(name_validator, address_validator, debug_logger):
+    """Render the bulk validation tab with CSV upload"""
+    st.header("📊 Bulk Validation")
+    st.write("Upload a CSV file to validate multiple names and addresses at once")
+    
+    # CSV Upload Section
+    st.subheader("📁 CSV File Upload")
+    
+    # Template download
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.write("**Step 1:** Download the template CSV file")
+        
+        # Create sample template
+        template_data = {
+            'first_name': ['John', 'Jane', 'Michael'],
+            'last_name': ['Smith', 'Doe', 'Johnson'],
+            'street_address': ['1600 Pennsylvania Ave NW', '350 Fifth Avenue', '123 Main Street'],
+            'city': ['Washington', 'New York', 'Chicago'],
+            'state': ['DC', 'NY', 'IL'],
+            'zip_code': ['20500', '10118', '60601']
+        }
+        template_df = pd.DataFrame(template_data)
+        
+        csv_template = template_df.to_csv(index=False)
+        st.download_button(
+            label="📥 Download CSV Template",
+            data=csv_template,
+            file_name="name_address_template.csv",
+            mime="text/csv",
+            help="Download this template and fill in your data"
+        )
+    
+    with col2:
+        st.write("**Step 2:** Upload your completed CSV file")
+        uploaded_file = st.file_uploader(
+            "Choose CSV file",
+            type=['csv'],
+            help="Upload a CSV file with columns: first_name, last_name, street_address, city, state, zip_code"
+        )
+    
+    # CSV Format Requirements
+    with st.expander("📋 CSV Format Requirements", expanded=False):
+        st.markdown("""
+        **Required Columns:**
+        - `first_name`: Person's first name
+        - `last_name`: Person's last name  
+        - `street_address`: Street address with number and street name
+        - `city`: City name
+        - `state`: Two-letter state code (e.g., CA, NY, TX)
+        - `zip_code`: ZIP code (5 or 9 digits)
+        
+        **Example:**
+        ```
+        first_name,last_name,street_address,city,state,zip_code
+        John,Smith,1600 Pennsylvania Ave NW,Washington,DC,20500
+        Jane,Doe,350 Fifth Avenue,New York,NY,10118
+        ```
+        
+        **Notes:**
+        - Column names must match exactly (case-sensitive)
+        - Missing values will be treated as empty strings
+        - ZIP codes can include dashes (e.g., 12345-6789)
+        """)
+    
+    # Process uploaded file
+    if uploaded_file is not None:
+        try:
+            # Read CSV file
+            df = pd.read_csv(uploaded_file)
+            
+            st.success(f"✅ File uploaded successfully! Found {len(df)} records.")
+            
+            # Validate CSV format
+            required_columns = ['first_name', 'last_name', 'street_address', 'city', 'state', 'zip_code']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
+                st.info("Please ensure your CSV has all required columns with exact names (case-sensitive)")
+                return
+            
+            # Clean and prepare data - Fill NaN values with empty strings
+            for col in required_columns:
+                df[col] = df[col].fillna('').astype(str)
+            
+            # Show preview of uploaded data
+            st.subheader("📋 Data Preview")
+            st.write(f"Showing first 5 rows of {len(df)} total records:")
+            st.dataframe(df.head(), use_container_width=True)
+            
+            # Data quality check
+            st.subheader("🔍 Data Quality Check")
+            
+            quality_issues = []
+            
+            # Check for empty values
+            for col in required_columns:
+                empty_count = (df[col] == '').sum() + (df[col] == 'nan').sum()
+                if empty_count > 0:
+                    quality_issues.append(f"**{col}**: {empty_count} empty values")
+            
+            # Check state format (only for non-empty values)
+            state_mask = (df['state'] != '') & (df['state'] != 'nan')
+            if state_mask.any():
+                state_regex = r'^[A-Z]{2}$'
+                invalid_state_mask = state_mask & ~df['state'].str.match(state_regex, na=False)
+                if invalid_state_mask.any():
+                    invalid_states = df[invalid_state_mask]['state'].unique()
+                    # Filter out any remaining NaN or empty values
+                    invalid_states = [s for s in invalid_states if s and str(s) not in ['nan', 'NaN', '']]
+                    if len(invalid_states) > 0:
+                        quality_issues.append(f"**state**: Invalid formats found: {', '.join(map(str, invalid_states[:5]))}")
+            
+            # Check ZIP code format (only for non-empty values)
+            zip_mask = (df['zip_code'] != '') & (df['zip_code'] != 'nan')
+            if zip_mask.any():
+                zip_regex = r'^\d{5}(-\d{4})?$'
+                invalid_zip_mask = zip_mask & ~df['zip_code'].str.match(zip_regex, na=False)
+                if invalid_zip_mask.any():
+                    invalid_zips = df[invalid_zip_mask]['zip_code'].unique()
+                    # Filter out any remaining NaN or empty values
+                    invalid_zips = [z for z in invalid_zips if z and str(z) not in ['nan', 'NaN', '']]
+                    if len(invalid_zips) > 0:
+                        quality_issues.append(f"**zip_code**: Invalid formats found: {', '.join(map(str, invalid_zips[:5]))}")
+            
+            if quality_issues:
+                st.warning("⚠️ Data quality issues detected:")
+                for issue in quality_issues:
+                    st.write(f"• {issue}")
+                st.info("You can still proceed with validation, but these issues may affect results.")
+            else:
+                st.success("✅ No data quality issues detected!")
+            
+            # Validation controls
+            st.subheader("⚙️ Validation Settings")
+            
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                max_records = st.number_input(
+                    "Maximum records to validate",
+                    min_value=1,
+                    max_value=len(df),
+                    value=min(100, len(df)),
+                    help="Limit number of records to avoid timeout"
+                )
+            
+            with col2:
+                include_suggestions = st.checkbox(
+                    "Include suggestions",
+                    value=True,
+                    help="Include name/address suggestions in results"
+                )
+            
+            with col3:
+                detailed_results = st.checkbox(
+                    "Detailed results",
+                    value=False,
+                    help="Include confidence scores and metadata"
+                )
+            
+            # Validate button
+            if st.button("🚀 Start Validation", type="primary", use_container_width=True):
+                validate_csv_data(
+                    df.head(max_records), 
+                    name_validator, 
+                    address_validator, 
+                    debug_logger,
+                    include_suggestions,
+                    detailed_results
+                )
+                
+        except Exception as e:
+            st.error(f"❌ Error reading CSV file: {str(e)}")
+            st.info("Please ensure your file is a valid CSV format.")
+    
+    else:
+        # Show sample data when no file is uploaded
+        st.subheader("📝 Sample Data")
+        st.write("Here's what your CSV data should look like:")
+        
+        sample_data = {
+            'first_name': ['John', 'Jane', 'Michael', 'Sarah'],
+            'last_name': ['Smith', 'Doe', 'Johnson', 'Williams'],
+            'street_address': ['1600 Pennsylvania Ave NW', '350 Fifth Avenue', '123 Main Street', '456 Oak Drive'],
+            'city': ['Washington', 'New York', 'Chicago', 'Los Angeles'],
+            'state': ['DC', 'NY', 'IL', 'CA'],
+            'zip_code': ['20500', '10118', '60601', '90210']
+        }
+        sample_df = pd.DataFrame(sample_data)
+        st.dataframe(sample_df, use_container_width=True)
+
+
+def validate_csv_data(df, name_validator, address_validator, debug_logger, include_suggestions=True, detailed_results=False):
+    """Process and validate CSV data with progress tracking"""
+    
+    st.subheader("🔄 Validation Progress")
+    
+    total_records = len(df)
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    results_container = st.container()
+    
+    debug_logger.log(f"🚀 Starting bulk validation of {total_records} records")
+    
+    # Initialize results list
+    results = []
+    
+    # Process each record
+    for i, (_, row) in enumerate(df.iterrows()):
+        # Update progress
+        progress = (i + 1) / total_records
+        progress_bar.progress(progress)
+        status_text.text(f"Validating record {i + 1} of {total_records}: {row.get('first_name', '')} {row.get('last_name', '')}")
+        
+        # Convert row to dict
+        record = row.to_dict()
+        
+        # Validate the record
+        result = validate_single_record(name_validator, address_validator, record, debug_logger)
+        results.append(result)
+        
+        # Brief pause to show progress (optional)
+        if i % 10 == 0:  # Every 10 records
+            time.sleep(0.1)
+    
+    # Complete progress
+    progress_bar.progress(1.0)
+    status_text.text("✅ Validation complete!")
+    
+    # Convert results to DataFrame
+    results_df = pd.DataFrame(results)
+    
+    # Display results
+    with results_container:
+        display_validation_results(results_df, include_suggestions, detailed_results, debug_logger)
+    
+    debug_logger.log(f"✅ Bulk validation completed for {total_records} records")
+
+
+def display_validation_results(results_df, include_suggestions, detailed_results, debug_logger):
+    """Display validation results in tabular format"""
+    
+    st.subheader("📊 Validation Results")
+    
+    # Summary statistics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    total_records = len(results_df)
+    valid_names = (results_df['name_valid'] == True).sum()
+    valid_addresses = (results_df['address_deliverable'] == True).sum()
+    fully_valid = ((results_df['name_valid'] == True) & (results_df['address_deliverable'] == True)).sum()
+    
+    with col1:
+        st.metric("📊 Total Records", total_records)
+    
+    with col2:
+        st.metric("👤 Valid Names", f"{valid_names}/{total_records}", f"{valid_names/total_records:.1%}")
+    
+    with col3:
+        st.metric("📮 Valid Addresses", f"{valid_addresses}/{total_records}", f"{valid_addresses/total_records:.1%}")
+    
+    with col4:
+        st.metric("✅ Fully Valid", f"{fully_valid}/{total_records}", f"{fully_valid/total_records:.1%}")
+    
+    # Filter options
+    st.subheader("🔍 Filter Results")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        status_filter = st.selectbox(
+            "Filter by status:",
+            ["All Records", "✅ Fully Valid", "⚠️ Partially Valid", "❌ Invalid"],
+            index=0
+        )
+    
+    with col2:
+        name_filter = st.selectbox(
+            "Filter by name validation:",
+            ["All", "Valid Names Only", "Invalid Names Only"],
+            index=0
+        )
+    
+    with col3:
+        address_filter = st.selectbox(
+            "Filter by address validation:",
+            ["All", "Deliverable Only", "Non-deliverable Only"],
+            index=0
+        )
+    
+    # Apply filters
+    filtered_df = results_df.copy()
+    
+    if status_filter == "✅ Fully Valid":
+        filtered_df = filtered_df[(filtered_df['name_valid'] == True) & (filtered_df['address_deliverable'] == True)]
+    elif status_filter == "⚠️ Partially Valid":
+        filtered_df = filtered_df[((filtered_df['name_valid'] == True) & (filtered_df['address_deliverable'] == False)) | 
+                                  ((filtered_df['name_valid'] == False) & (filtered_df['address_deliverable'] == True))]
+    elif status_filter == "❌ Invalid":
+        filtered_df = filtered_df[(filtered_df['name_valid'] == False) & (filtered_df['address_deliverable'] == False)]
+    
+    if name_filter == "Valid Names Only":
+        filtered_df = filtered_df[filtered_df['name_valid'] == True]
+    elif name_filter == "Invalid Names Only":
+        filtered_df = filtered_df[filtered_df['name_valid'] == False]
+    
+    if address_filter == "Deliverable Only":
+        filtered_df = filtered_df[filtered_df['address_deliverable'] == True]
+    elif address_filter == "Non-deliverable Only":
+        filtered_df = filtered_df[filtered_df['address_deliverable'] == False]
+    
+    st.write(f"**Showing {len(filtered_df)} of {total_records} records**")
+    
+    # Choose columns to display
+    if detailed_results:
+        display_columns = [
+            'overall_status',
+            'original_first_name', 'original_last_name',
+            'normalized_first_name', 'normalized_last_name',
+            'original_street_address', 'original_city', 'original_state', 'original_zip_code',
+            'standardized_street_address', 'standardized_city', 'standardized_state', 'standardized_zip_code',
+            'name_confidence', 'address_confidence',
+            'name_errors', 'name_warnings', 'address_error'
+        ]
+        if include_suggestions:
+            display_columns.append('suggestions')
+    else:
+        display_columns = [
+            'overall_status',
+            'original_first_name', 'original_last_name',
+            'original_street_address', 'original_city', 'original_state', 'original_zip_code',
+            'standardized_street_address', 'standardized_city', 'standardized_state', 'standardized_zip_code'
+        ]
+        if include_suggestions:
+            display_columns.append('suggestions')
+    
+    # Display the filtered results
+    if len(filtered_df) > 0:
+        # Make the dataframe more readable
+        display_df = filtered_df[display_columns].copy()
+        
+        # Rename columns for better readability
+        column_mapping = {
+            'overall_status': 'Status',
+            'original_first_name': 'Original First Name',
+            'original_last_name': 'Original Last Name',
+            'normalized_first_name': 'Normalized First Name',
+            'normalized_last_name': 'Normalized Last Name',
+            'original_street_address': 'Original Street',
+            'original_city': 'Original City',
+            'original_state': 'Original State',
+            'original_zip_code': 'Original ZIP',
+            'standardized_street_address': 'Standardized Street',
+            'standardized_city': 'Standardized City',
+            'standardized_state': 'Standardized State',
+            'standardized_zip_code': 'Standardized ZIP',
+            'name_confidence': 'Name Confidence',
+            'address_confidence': 'Address Confidence',
+            'name_errors': 'Name Errors',
+            'name_warnings': 'Name Warnings',
+            'address_error': 'Address Error',
+            'suggestions': 'Suggestions'
+        }
+        
+        display_df = display_df.rename(columns=column_mapping)
+        
+        # Format confidence scores as percentages
+        if 'Name Confidence' in display_df.columns:
+            display_df['Name Confidence'] = display_df['Name Confidence'].apply(lambda x: f"{x:.1%}" if pd.notnull(x) else "")
+        if 'Address Confidence' in display_df.columns:
+            display_df['Address Confidence'] = display_df['Address Confidence'].apply(lambda x: f"{x:.1%}" if pd.notnull(x) else "")
+        
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Status": st.column_config.TextColumn(width="medium"),
+                "Suggestions": st.column_config.TextColumn(width="large")
+            }
+        )
+        
+        # Download results
+        st.subheader("📥 Download Results")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Full results CSV
+            csv_full = results_df.to_csv(index=False)
+            st.download_button(
+                label="📄 Download Full Results (CSV)",
+                data=csv_full,
+                file_name=f"validation_results_full_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                help="Download all validation results with detailed information"
+            )
+        
+        with col2:
+            # Filtered results CSV
+            csv_filtered = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="📄 Download Filtered Results (CSV)",
+                data=csv_filtered,
+                file_name=f"validation_results_filtered_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                help="Download currently filtered results"
+            )
+    
+    else:
+        st.info("No records match the current filters.")
+
+
 def main():
-    """Main Streamlit application"""
+    """Main Streamlit application with tabs"""
     
     st.set_page_config(
         page_title="Name & Address Validator",
@@ -154,10 +698,64 @@ def main():
     st.title("📮👤 Name & Address Validator")
     st.write("Validate names and addresses with comprehensive analysis")
     
-    # Sidebar with debug options
+    # Load credentials
+    client_id, client_secret = load_usps_credentials()
+    
+    if not client_id or not client_secret:
+        debug_logger.log("❌ Credentials not found")
+        st.error("❌ USPS API credentials not configured")
+        
+        with st.expander("📋 Setup Instructions"):
+            st.markdown("""
+            **For Streamlit Cloud:**
+            1. Click "Manage app" (bottom right)
+            2. Go to "App settings" → "Secrets"
+            3. Add your credentials:
+            ```toml
+            USPS_CLIENT_ID = "your_actual_client_id"
+            USPS_CLIENT_SECRET = "your_actual_client_secret"
+            ```
+            4. Click "Save" and restart the app
+            
+            **For Local Development:**
+            Create `.streamlit/secrets.toml` file with the same format.
+            """)
+        return
+    
+    debug_logger.log("✅ Credentials loaded successfully")
+    debug_logger.log(f"🔧 Client ID: {client_id[:8]}...{client_id[-4:]}")
+    
+    # Initialize validators
+    try:
+        name_validator = EnhancedNameValidator()
+        address_validator = USPSAddressValidator(
+            client_id, 
+            client_secret, 
+            debug_callback=debug_logger.log if st.session_state.get('debug_mode', False) else lambda x: None
+        )
+        debug_logger.log("🔧 Validators initialized")
+    except Exception as e:
+        st.error(f"❌ Error initializing validators: {e}")
+        return
+    
+    # Show credential status
+    st.success("✅ USPS API configured")
+    
+    # Create tabs
+    tab1, tab2 = st.tabs(["🔍 Single Validation", "📊 Bulk Validation"])
+    
+    with tab1:
+        render_single_validation_tab(name_validator, address_validator, debug_logger)
+    
+    with tab2:
+        render_bulk_validation_tab(name_validator, address_validator, debug_logger)
+    
+    # Debug options in sidebar
     with st.sidebar:
         st.header("🔧 Debug Options")
-        debug_mode = st.checkbox("Enable debug mode", value=False)
+        debug_mode = st.checkbox("Enable debug mode", value=st.session_state.get('debug_mode', False))
+        st.session_state.debug_mode = debug_mode
+        debug_logger.enabled = debug_mode
         
         if st.button("Clear debug logs"):
             debug_logger.clear()
@@ -183,60 +781,20 @@ def main():
         - Real-time verification
         - Address standardization
         """)
-    
-    debug_logger.enabled = debug_mode
-    debug_logger.log("🚀 App started")
-    
-    # Load credentials
-    client_id, client_secret = load_usps_credentials()
-    
-    if not client_id or not client_secret:
-        debug_logger.log("❌ Credentials not found")
-        st.error("❌ USPS API credentials not configured")
         
-        with st.expander("📋 Setup Instructions"):
-            st.markdown("""
-            **For Streamlit Cloud:**
-            1. Click "Manage app" (bottom right)
-            2. Go to "App settings" → "Secrets"
-            3. Add your credentials:
-            ```toml
-            USPS_CLIENT_ID = "your_actual_client_id"
-            USPS_CLIENT_SECRET = "your_actual_client_secret"
-            ```
-            4. Click "Save" and restart the app
-            
-            **For Local Development:**
-            Create `.streamlit/secrets.toml` file with the same format.
-            """)
-        
+        # Display debug logs if enabled
         if debug_mode:
+            st.markdown("---")
             debug_logger.display()
-        return
+
+
+def render_single_validation_tab(name_validator, address_validator, debug_logger):
+    """Render the single validation tab (original functionality)"""
     
-    debug_logger.log("✅ Credentials loaded successfully")
-    debug_logger.log(f"🔧 Client ID: {client_id[:8]}...{client_id[-4:]}")
-    
-    # Initialize validators
-    try:
-        name_validator = EnhancedNameValidator()
-        address_validator = USPSAddressValidator(
-            client_id, 
-            client_secret, 
-            debug_callback=debug_logger.log if debug_mode else lambda x: None
-        )
-        debug_logger.log("🔧 Validators initialized")
-    except Exception as e:
-        st.error(f"❌ Error initializing validators: {e}")
-        if debug_mode:
-            st.exception(e)
-        return
-    
-    # Show credential status
-    st.success("✅ USPS API configured")
+    debug_logger.log("🚀 Single validation tab loaded")
     
     # Main validation form
-    st.header("🔍 Combined Validation")
+    st.header("🔍 Single Validation")
     
     with st.form("validation_form"):
         # Name section
@@ -300,7 +858,7 @@ def main():
     
     # Process validation
     if submitted:
-        debug_logger.log("🔄 Starting validation process...")
+        debug_logger.log("🔄 Starting single validation process...")
         
         if not all([first_name, last_name, street_address, city, state, zip_code]):
             st.error("❌ Please fill in all required fields")
@@ -342,11 +900,11 @@ def main():
                 progress_bar.empty()
                 status_text.empty()
                 
-                display_results(name_result, address_result, debug_logger)
+                display_single_validation_results(name_result, address_result, debug_logger)
                 
             except Exception as e:
                 st.error(f"❌ Validation error: {e}")
-                if debug_mode:
+                if st.session_state.get('debug_mode', False):
                     st.exception(e)
                 progress_bar.empty()
                 status_text.empty()
@@ -354,15 +912,54 @@ def main():
     # Quick test examples
     else:
         render_quick_tests()
+
+
+def render_quick_tests():
+    """Render quick test examples"""
+    st.markdown("---")
+    st.header("🧪 Quick Tests")
+    st.write("Try these example combinations:")
     
-    # Display debug logs if enabled
-    if debug_mode:
-        st.markdown("---")
-        debug_logger.display()
+    col1, col2, col3 = st.columns(3)
+    
+    test_data = [
+        {
+            "name": "🏛️ Government Official",
+            "first": "John",
+            "last": "Smith", 
+            "street": "1600 Pennsylvania Ave NW",
+            "city": "Washington",
+            "state": "DC",
+            "zip": "20500"
+        },
+        {
+            "name": "🏢 Business Address",
+            "first": "Jane",
+            "last": "Johnson",
+            "street": "350 Fifth Avenue",
+            "city": "New York",
+            "state": "NY", 
+            "zip": "10118"
+        },
+        {
+            "name": "❌ Invalid Data",
+            "first": "Jhonny",
+            "last": "Smithh",
+            "street": "123 Fake Street",
+            "city": "Nowhere",
+            "state": "XX",
+            "zip": "00000"
+        }
+    ]
+    
+    for i, data in enumerate(test_data):
+        with [col1, col2, col3][i]:
+            if st.button(data["name"], use_container_width=True, key=f"test_{i}"):
+                st.info(f"Test example: {data['first']} {data['last']}, {data['street']}")
 
 
-def display_results(name_result: Dict, address_result: Dict, debug_logger):
-    """Display validation results"""
+def display_single_validation_results(name_result: Dict, address_result: Dict, debug_logger):
+    """Display validation results for single validation"""
     st.markdown("---")
     st.header("📊 Validation Results")
     
@@ -486,50 +1083,6 @@ def display_address_results(result: Dict, debug_logger):
         st.error(f"❌ **Address validation failed:** {result['error']}")
         if result.get('details'):
             st.write(f"**Details:** {result['details']}")
-
-
-def render_quick_tests():
-    """Render quick test examples"""
-    st.markdown("---")
-    st.header("🧪 Quick Tests")
-    st.write("Try these example combinations:")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    test_data = [
-        {
-            "name": "🏛️ Government Official",
-            "first": "John",
-            "last": "Smith", 
-            "street": "1600 Pennsylvania Ave NW",
-            "city": "Washington",
-            "state": "DC",
-            "zip": "20500"
-        },
-        {
-            "name": "🏢 Business Address",
-            "first": "Jane",
-            "last": "Johnson",
-            "street": "350 Fifth Avenue",
-            "city": "New York",
-            "state": "NY", 
-            "zip": "10118"
-        },
-        {
-            "name": "❌ Invalid Data",
-            "first": "Jhonny",
-            "last": "Smithh",
-            "street": "123 Fake Street",
-            "city": "Nowhere",
-            "state": "XX",
-            "zip": "00000"
-        }
-    ]
-    
-    for i, data in enumerate(test_data):
-        with [col1, col2, col3][i]:
-            if st.button(data["name"], use_container_width=True, key=f"test_{i}"):
-                st.info(f"Test example: {data['first']} {data['last']}, {data['street']}")
 
 
 if __name__ == "__main__":
