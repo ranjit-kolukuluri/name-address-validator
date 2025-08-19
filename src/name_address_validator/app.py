@@ -1,7 +1,7 @@
-# src/name_address_validator/app.py - Enterprise SaaS UI (UI Only)
+# src/name_address_validator/app.py - Enterprise SaaS UI (Clean & Optimized)
 """
 Enterprise SaaS Name and Address Validator - Streamlit Interface
-Clean, modularized version with validation logic in separate modules
+Clean, modularized version with improved UI and consolidated markup
 """
 
 import streamlit as st
@@ -143,7 +143,7 @@ debug_monitor = DebugMonitor()
 
 
 def apply_enterprise_saas_css():
-    """Apply modern enterprise SaaS styling"""
+    """Apply modern enterprise SaaS styling with improved compact design"""
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -155,48 +155,58 @@ def apply_enterprise_saas_css():
         min-height: 100vh;
     }
     
-    /* Header Styles */
+    /* Compact Header Styles */
     .enterprise-header {
         background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-        padding: 2rem;
+        padding: 1.5rem 2rem;
         border-radius: 16px;
-        margin-bottom: 2rem;
+        margin-bottom: 1.5rem;
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
         backdrop-filter: blur(10px);
         border: 1px solid rgba(255, 255, 255, 0.1);
         position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        max-width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
     }
     
     .main-title {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
         font-weight: 700;
         color: #ffffff;
         text-align: center;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.3rem;
         letter-spacing: -0.025em;
+        white-space: nowrap;
+        line-height: 1.2;
     }
     
     .subtitle {
-        font-size: 1.1rem;
+        font-size: 1rem;
         color: #cbd5e1;
         text-align: center;
         font-weight: 400;
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem;
+        white-space: nowrap;
+        opacity: 0.9;
     }
     
     .api-status {
         background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
         color: #ffffff;
-        padding: 0.75rem 1.5rem;
-        border-radius: 50px;
+        padding: 0.5rem 1.2rem;
+        border-radius: 25px;
         font-weight: 600;
-        font-size: 0.875rem;
+        font-size: 0.8rem;
         text-align: center;
-        margin: 0 auto;
-        max-width: 300px;
+        margin-top: 0.5rem;
         box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
         border: 2px solid #60a5fa;
         animation: pulse-glow 2s infinite;
+        white-space: nowrap;
     }
     
     .api-status.error {
@@ -227,14 +237,18 @@ def apply_enterprise_saas_css():
         box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
     }
     
+    /* Compact Section Headers */
     .section-header {
-        font-size: 1.5rem;
+        font-size: 1.4rem;
         font-weight: 600;
         color: #1e40af;
-        margin-bottom: 1.5rem;
-        padding-bottom: 0.75rem;
+        margin-bottom: 1.2rem;
+        padding-bottom: 0.5rem;
         border-bottom: 2px solid #e2e8f0;
         position: relative;
+        display: inline-block;
+        width: auto;
+        min-width: fit-content;
     }
     
     .section-header::after {
@@ -242,7 +256,7 @@ def apply_enterprise_saas_css():
         position: absolute;
         bottom: -2px;
         left: 0;
-        width: 60px;
+        width: 100%;
         height: 2px;
         background: linear-gradient(90deg, #3b82f6, #8b5cf6);
         border-radius: 1px;
@@ -258,21 +272,23 @@ def apply_enterprise_saas_css():
     }
     
     .form-group-title {
-        font-size: 1.1rem;
+        font-size: 1.05rem;
         font-weight: 600;
         color: #1e40af;
         margin-bottom: 1rem;
-        display: flex;
+        display: inline-flex;
         align-items: center;
+        width: auto;
     }
     
     .form-group-title::before {
         content: '';
         width: 4px;
-        height: 20px;
+        height: 18px;
         background: linear-gradient(135deg, #3b82f6, #8b5cf6);
         border-radius: 2px;
         margin-right: 0.75rem;
+        flex-shrink: 0;
     }
     
     /* Status Messages */
@@ -420,28 +436,84 @@ def apply_enterprise_saas_css():
         background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
     }
     
-    /* Tab Styles */
+    /* Enhanced Intuitive Tab Styles */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        padding: 4px;
+        gap: 0;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 16px;
+        padding: 6px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        margin-bottom: 1.5rem;
+        justify-content: center;
+        width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
     }
     
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
+        height: 48px;
         background: transparent;
-        border-radius: 8px;
+        border-radius: 12px;
         color: #64748b;
         font-weight: 500;
         border: none;
         transition: all 0.3s ease;
+        margin: 0 2px;
+        padding: 0 1.5rem;
+        position: relative;
+        overflow: hidden;
+        min-width: 140px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.95rem;
+        cursor: pointer;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+        transform: translateY(-1px);
     }
     
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
         color: white;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        transform: translateY(-2px);
+        font-weight: 600;
+    }
+    
+    .stTabs [aria-selected="true"]:hover {
+        background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+        transform: translateY(-2px);
+        color: white;
+    }
+    
+    /* Add icons to tabs using pseudo elements */
+    .stTabs [data-baseweb="tab"]:first-child::before {
+        content: "👤";
+        margin-right: 0.5rem;
+        font-size: 1rem;
+    }
+    
+    .stTabs [data-baseweb="tab"]:nth-child(2)::before {
+        content: "📊";
+        margin-right: 0.5rem;
+        font-size: 1rem;
+    }
+    
+    .stTabs [data-baseweb="tab"]:nth-child(3)::before {
+        content: "🔧";
+        margin-right: 0.5rem;
+        font-size: 1rem;
+    }
+    
+    /* Tab content styling */
+    .stTabs [data-baseweb="tab-panel"] {
+        padding: 1rem 0;
     }
     
     /* Data Frame Styling */
@@ -505,7 +577,12 @@ def apply_enterprise_saas_css():
     /* Responsive Design */
     @media (max-width: 768px) {
         .main-title {
-            font-size: 2rem;
+            font-size: 1.8rem;
+        }
+        
+        .enterprise-header {
+            padding: 1rem;
+            margin-bottom: 1rem;
         }
         
         .glass-card {
@@ -516,6 +593,38 @@ def apply_enterprise_saas_css():
         .metric-card {
             padding: 1rem;
         }
+        
+        .stTabs [data-baseweb="tab-list"] {
+            width: 100%;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            min-width: auto;
+            flex: 1;
+            padding: 0 1rem;
+            font-size: 0.85rem;
+        }
+        
+        .stTabs [data-baseweb="tab"]::before {
+            font-size: 0.9rem;
+            margin-right: 0.3rem;
+        }
+    }
+    
+    /* Additional improvements for better UX */
+    .stTabs [data-baseweb="tab-list"]:hover {
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* Smooth scrolling */
+    html {
+        scroll-behavior: smooth;
+    }
+    
+    /* Focus states for accessibility */
+    .stTabs [data-baseweb="tab"]:focus {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -555,12 +664,18 @@ def render_api_status(client_id: Optional[str], client_secret: Optional[str]):
 def render_single_validation():
     """Render single validation form - Clean Professional Version"""
     
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">Single Record Validation</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="glass-card">
+        <div class="section-header">Single Record Validation</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     # Personal Information Section
-    st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    st.markdown('<div class="form-group-title">Personal Information</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="form-section">
+        <div class="form-group-title">Personal Information</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
@@ -579,11 +694,12 @@ def render_single_validation():
             help="Enter the person's last name"
         )
     
-    st.markdown('</div>', unsafe_allow_html=True)
-    
     # Address Information Section
-    st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    st.markdown('<div class="form-group-title">Address Information</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="form-section">
+        <div class="form-group-title">Address Information</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     street_address = st.text_input(
         "Street Address", 
@@ -615,8 +731,6 @@ def render_single_validation():
             placeholder="12345 or 12345-6789",
             help="Enter 5-digit ZIP code or ZIP+4 format"
         )
-    
-    st.markdown('</div>', unsafe_allow_html=True)
     
     # Validation Logic
     all_fields_have_content = (
@@ -657,12 +771,11 @@ def render_single_validation():
             missing_fields.append("ZIP Code")
         
         if missing_fields:
-            st.markdown('<div class="form-section">', unsafe_allow_html=True)
-            display_status_message(
-                f"Please complete the following required fields: {', '.join(missing_fields)}", 
-                "info"
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(f'''
+            <div class="form-section">
+                <div class="status-info">ℹ Please complete the following required fields: {', '.join(missing_fields)}</div>
+            </div>
+            ''', unsafe_allow_html=True)
     
     # Usage Instructions
     with st.expander("ℹ️ How to Use This Tool"):
@@ -682,8 +795,6 @@ def render_single_validation():
         - ZIP codes can be 5-digit (12345) or ZIP+4 format (12345-6789)
         - Ensure all fields are filled before validation
         """)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def process_single_validation(first_name: str, last_name: str, street_address: str, city: str, state: str, zip_code: str):
@@ -777,8 +888,11 @@ def display_results(name_result: Dict, address_result: Dict):
     
     debug_monitor.log("INFO", "Displaying validation results", "UI")
     
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">Validation Results</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="glass-card">
+        <div class="section-header">Validation Results</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     # Summary metrics
     col1, col2, col3 = st.columns(3)
@@ -822,8 +936,11 @@ def display_results(name_result: Dict, address_result: Dict):
     col_name, col_address = st.columns(2)
     
     with col_name:
-        st.markdown('<div class="form-section">', unsafe_allow_html=True)
-        st.markdown('<div class="form-group-title">Name Validation Details</div>', unsafe_allow_html=True)
+        st.markdown('''
+        <div class="form-section">
+            <div class="form-group-title">Name Validation Details</div>
+        </div>
+        ''', unsafe_allow_html=True)
         
         if name_result['valid']:
             display_status_message("Name validation passed", "success")
@@ -842,12 +959,13 @@ def display_results(name_result: Dict, address_result: Dict):
                     st.write(f"**{field.replace('_', ' ').title()}:**")
                     for suggestion in suggestions[:3]:
                         st.write(f"• {suggestion['suggestion']} ({suggestion['confidence']:.1%})")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
     
     with col_address:
-        st.markdown('<div class="form-section">', unsafe_allow_html=True)
-        st.markdown('<div class="form-group-title">Address Validation Details</div>', unsafe_allow_html=True)
+        st.markdown('''
+        <div class="form-section">
+            <div class="form-group-title">Address Validation Details</div>
+        </div>
+        ''', unsafe_allow_html=True)
         
         if address_result.get('success', False):
             if address_result.get('deliverable', False):
@@ -867,18 +985,17 @@ def display_results(name_result: Dict, address_result: Dict):
                 display_status_message("Address found but may not be deliverable", "warning")
         else:
             display_status_message(f"Address validation failed: {address_result.get('error', 'Unknown error')}", "error")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_bulk_validation():
     """Render bulk validation interface"""
     debug_monitor.log("INFO", "Rendering bulk validation interface", "UI")
     
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">Batch Processing</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="glass-card">
+        <div class="section-header">Batch Processing</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     st.write("Upload a CSV file to validate multiple records simultaneously")
     
@@ -929,10 +1046,12 @@ def render_bulk_validation():
             debug_monitor.log("INFO", "CSV file processed successfully", "BULK_VALIDATION", record_count=len(df))
             
             # Data preview
-            st.markdown('<div class="form-section">', unsafe_allow_html=True)
-            st.markdown('<div class="form-group-title">Data Preview</div>', unsafe_allow_html=True)
+            st.markdown('''
+            <div class="form-section">
+                <div class="form-group-title">Data Preview</div>
+            </div>
+            ''', unsafe_allow_html=True)
             st.dataframe(df.head(10), use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
             
             # Processing options
             col1, col2 = st.columns(2)
@@ -956,8 +1075,6 @@ def render_bulk_validation():
         except Exception as e:
             display_status_message(f"Error reading CSV file: {str(e)}", "error")
             debug_monitor.log("ERROR", "Failed to process CSV file", "BULK_VALIDATION", error=str(e))
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
@@ -1108,7 +1225,7 @@ def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
                         if metadata.get('dpv_confirmation'):
                             dpv_meanings = {
                                 'Y': 'Deliverable',
-                                'N': 'Not Deliverable', 
+                                'N': 'Not Deliverable',
                                 'D': 'Deliverable (Missing Unit)'
                             }
                             dpv_meaning = dpv_meanings.get(metadata['dpv_confirmation'], metadata['dpv_confirmation'])
@@ -1185,8 +1302,11 @@ def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
 def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_count: int, include_suggestions: bool = False):
     """Display bulk validation results with enhanced metrics"""
     
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">Batch Validation Results</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="glass-card">
+        <div class="section-header">Batch Validation Results</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     # Summary metrics
     total_records = len(results_df)
@@ -1234,8 +1354,11 @@ def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_cou
         ''', unsafe_allow_html=True)
     
     # Address type breakdown
-    st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    st.markdown('<div class="form-group-title">Address Type Breakdown</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="form-section">
+        <div class="form-group-title">Address Type Breakdown</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     
@@ -1266,8 +1389,6 @@ def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_cou
         </div>
         ''', unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True)
-    
     # Show info about suggestions and corrections
     if include_suggestions:
         display_status_message("✅ Enhanced results with suggestions, USPS corrections, and detailed address analysis", "info")
@@ -1286,8 +1407,11 @@ def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_cou
         display_status_message("ℹ️ Basic validation results only (suggestions and corrections disabled)", "info")
     
     # Results table with improved formatting
-    st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    st.markdown('<div class="form-group-title">Detailed Results</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="form-section">
+        <div class="form-group-title">Detailed Results</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     # Apply conditional formatting for better readability
     def highlight_status(val):
@@ -1308,7 +1432,6 @@ def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_cou
     )
     
     st.dataframe(styled_df, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
     
     # Download results
     csv_results = results_df.to_csv(index=False)
@@ -1361,15 +1484,16 @@ def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_cou
             )
         except ImportError:
             st.info("Excel download requires xlsxwriter. Install with: pip install xlsxwriter")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_monitoring_dashboard():
     """Render comprehensive monitoring dashboard"""
     
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-header">System Monitoring & Debug Logs</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="glass-card">
+        <div class="section-header">System Monitoring & Debug Logs</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     # System Statistics
     stats = st.session_state.validation_stats
@@ -1420,8 +1544,11 @@ def render_monitoring_dashboard():
     
     # Performance Metrics
     if st.session_state.performance_metrics:
-        st.markdown('<div class="form-section">', unsafe_allow_html=True)
-        st.markdown('<div class="form-group-title">Performance Metrics (Last 10)</div>', unsafe_allow_html=True)
+        st.markdown('''
+        <div class="form-section">
+            <div class="form-group-title">Performance Metrics (Last 10)</div>
+        </div>
+        ''', unsafe_allow_html=True)
         
         recent_metrics = st.session_state.performance_metrics[-10:]
         metrics_df = pd.DataFrame(recent_metrics)
@@ -1429,12 +1556,13 @@ def render_monitoring_dashboard():
         if not metrics_df.empty:
             metrics_df['timestamp'] = metrics_df['timestamp'].dt.strftime('%H:%M:%S')
             st.dataframe(metrics_df, use_container_width=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
     
     # Debug Logs
-    st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    st.markdown('<div class="form-group-title">Debug Logs</div>', unsafe_allow_html=True)
+    st.markdown('''
+    <div class="form-section">
+        <div class="form-group-title">Debug Logs</div>
+    </div>
+    ''', unsafe_allow_html=True)
     
     # Log filtering
     col1, col2, col3 = st.columns(3)
@@ -1486,8 +1614,6 @@ def render_monitoring_dashboard():
         for category, count in error_summary.items():
             st.write(f"**{category}**: {count} errors")
     
-    st.markdown('</div>', unsafe_allow_html=True)
-    
     # Controls
     col1, col2, col3 = st.columns(3)
     
@@ -1512,8 +1638,6 @@ def render_monitoring_dashboard():
                 'session_start': datetime.now()
             }
             st.success("Statistics reset")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def main():
