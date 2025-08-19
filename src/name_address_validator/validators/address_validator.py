@@ -1,17 +1,26 @@
-# address_validator.py - USPS Address Validator (FIXED)
+# src/name_address_validator/validators/address_validator.py - Enhanced Address Validator
 """
 USPS Address Validator using the working GET method with Method 4 authentication
-FIXED: Correct parsing of USPS API v3 response format
+Enhanced with comprehensive validation helpers and business/residential classification
 """
 
 import requests
 import json
 import time
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple, List
 
 class USPSAddressValidator:
-    """USPS validator using the correct authentication and validation methods"""
+    """Enhanced USPS validator with comprehensive validation helpers"""
+    
+    # US States for validation
+    US_STATES = {
+        'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+        'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+        'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+        'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+        'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+    }
     
     def __init__(self, client_id: str, client_secret: str, debug_callback=None):
         self.client_id = client_id
@@ -389,3 +398,134 @@ class USPSAddressValidator:
         
         self._log(f"✅ Validation complete - deliverable: {is_deliverable}")
         return result
+    
+    # Additional validation helpers for basic field validation
+    @staticmethod
+    def validate_address_field(address: str, debug_callback=None) -> Tuple[List[str], List[str]]:
+        """Validate street address with debug logging"""
+        start_time = time.time()
+        errors = []
+        warnings = []
+        
+        if debug_callback:
+            debug_callback(f"Starting address validation (length: {len(address) if address else 0})")
+        
+        if not address or not address.strip():
+            errors.append("Street address is required")
+            if debug_callback:
+                debug_callback("Address validation failed - empty field")
+            return errors, warnings
+        
+        address = address.strip()
+        
+        if len(address) > 100:
+            errors.append("Street address cannot exceed 100 characters")
+            if debug_callback:
+                debug_callback(f"Address validation failed - too long (length: {len(address)})")
+        
+        if not re.search(r'\d', address):
+            warnings.append("Street address should contain a house number")
+            if debug_callback:
+                debug_callback("Address warning - no house number detected")
+        
+        # Check for PO Box
+        if re.search(r'\b(po|p\.o\.)\s*box\b', address, re.IGNORECASE):
+            warnings.append("PO Box addresses may have delivery limitations")
+            if debug_callback:
+                debug_callback("PO Box detected in address")
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        if debug_callback:
+            if errors:
+                debug_callback(f"Address validation completed with {len(errors)} errors ({duration_ms}ms)")
+            else:
+                debug_callback(f"Address validation passed ({duration_ms}ms)")
+        
+        return errors, warnings
+    
+    @staticmethod
+    def validate_city_field(city: str, debug_callback=None) -> Tuple[List[str], List[str]]:
+        """Validate city with debug logging"""
+        start_time = time.time()
+        errors = []
+        warnings = []
+        
+        if debug_callback:
+            debug_callback("Starting city validation")
+        
+        if not city or not city.strip():
+            errors.append("City is required")
+            return errors, warnings
+        
+        city = city.strip()
+        
+        if len(city) > 50:
+            errors.append("City cannot exceed 50 characters")
+        
+        if not re.match(r"^[a-zA-Z\s\-'\.]+$", city):
+            errors.append("City can only contain letters, spaces, hyphens, apostrophes, and periods")
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        if debug_callback:
+            debug_callback(f"City validation completed ({duration_ms}ms)")
+        
+        return errors, warnings
+    
+    @staticmethod
+    def validate_state_field(state: str, debug_callback=None) -> Tuple[List[str], List[str]]:
+        """Validate state with debug logging"""
+        start_time = time.time()
+        errors = []
+        warnings = []
+        
+        if debug_callback:
+            debug_callback(f"Starting state validation (state: {state})")
+        
+        if not state or not state.strip():
+            errors.append("State is required")
+            return errors, warnings
+        
+        state = state.strip().upper()
+        
+        if len(state) != 2:
+            errors.append("State must be a 2-letter code (e.g., CA, NY, TX)")
+        elif state not in USPSAddressValidator.US_STATES:
+            errors.append(f"'{state}' is not a valid US state code")
+            if debug_callback:
+                debug_callback(f"Invalid state code provided: {state}")
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        if debug_callback:
+            debug_callback(f"State validation completed ({duration_ms}ms)")
+        
+        return errors, warnings
+    
+    @staticmethod
+    def validate_zip_code_field(zip_code: str, debug_callback=None) -> Tuple[List[str], List[str]]:
+        """Validate ZIP code with debug logging"""
+        start_time = time.time()
+        errors = []
+        warnings = []
+        
+        if debug_callback:
+            debug_callback("Starting ZIP code validation")
+        
+        if not zip_code or not zip_code.strip():
+            errors.append("ZIP code is required")
+            return errors, warnings
+        
+        zip_code = zip_code.strip()
+        
+        if not re.match(r'^\d{5}(-\d{4})?$', zip_code):
+            errors.append("ZIP code must be 5 digits or 5+4 format (e.g., 12345 or 12345-6789)")
+        
+        if zip_code == "00000" or zip_code == "00000-0000":
+            errors.append("ZIP code cannot be all zeros")
+            if debug_callback:
+                debug_callback("Invalid ZIP code - all zeros")
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        if debug_callback:
+            debug_callback(f"ZIP validation completed ({duration_ms}ms)")
+        
+        return errors, warnings

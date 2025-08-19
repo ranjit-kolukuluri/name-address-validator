@@ -1,6 +1,7 @@
-# src/name_address_validator/app.py - Enterprise SaaS UI with Improved Design
+# src/name_address_validator/app.py - Enterprise SaaS UI (UI Only)
 """
-Enterprise SaaS Name and Address Validator with Comprehensive Monitoring
+Enterprise SaaS Name and Address Validator - Streamlit Interface
+Clean, modularized version with validation logic in separate modules
 """
 
 import streamlit as st
@@ -8,14 +9,12 @@ import pandas as pd
 import time
 import sys
 import os
-import re
 import json
-import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple, List
 from pathlib import Path
 
-# Setup Python path (keep existing logic)
+# Setup Python path
 def setup_python_path():
     current_file = Path(__file__).resolve()
     possible_src_dirs = [
@@ -45,9 +44,12 @@ def setup_python_path():
 
 setup_python_path()
 
+# Import modules
 try:
     from name_address_validator.validators.name_validator import EnhancedNameValidator
     from name_address_validator.validators.address_validator import USPSAddressValidator
+    from name_address_validator.utils.config import load_usps_credentials
+    from name_address_validator.utils.logger import DebugLogger
     imports_successful = True
 except ImportError as e:
     st.error(f"Import Error: {e}")
@@ -58,9 +60,9 @@ if not imports_successful:
     st.stop()
 
 
-# Debug and Monitoring System
+# Debug and Monitoring System (UI-specific)
 class DebugMonitor:
-    """Comprehensive debug and monitoring system"""
+    """Comprehensive debug and monitoring system for UI"""
     
     def __init__(self):
         if 'debug_logs' not in st.session_state:
@@ -140,182 +142,8 @@ class DebugMonitor:
 debug_monitor = DebugMonitor()
 
 
-# Enhanced validation with debug logging
-class EnhancedValidator:
-    """Enhanced validation with comprehensive logging"""
-    
-    US_STATES = {
-        'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
-        'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
-        'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
-        'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
-        'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
-    }
-    
-    @staticmethod
-    def validate_name(name: str, field_name: str) -> Tuple[List[str], List[str]]:
-        """Validate name field with debug logging"""
-        start_time = time.time()
-        errors = []
-        warnings = []
-        
-        debug_monitor.log("INFO", f"Starting validation for {field_name}", "VALIDATION", name_length=len(name) if name else 0)
-        
-        if not name or not name.strip():
-            errors.append(f"{field_name} is required")
-            debug_monitor.log("WARNING", f"{field_name} validation failed - empty field", "VALIDATION")
-            return errors, warnings
-        
-        name = name.strip()
-        
-        if len(name) < 1:
-            errors.append(f"{field_name} cannot be empty")
-        
-        if len(name) > 50:
-            errors.append(f"{field_name} cannot exceed 50 characters")
-            debug_monitor.log("WARNING", f"{field_name} validation failed - too long", "VALIDATION", length=len(name))
-        
-        if not re.match(r"^[a-zA-Z\s\-'\.]+$", name):
-            errors.append(f"{field_name} can only contain letters, spaces, hyphens, apostrophes, and periods")
-            debug_monitor.log("WARNING", f"{field_name} validation failed - invalid characters", "VALIDATION", name=name)
-        
-        # Check for suspicious test values
-        suspicious_values = ['test', 'abc', 'xyz', 'example', 'sample', 'demo', 'null', 'undefined']
-        if name.lower() in suspicious_values:
-            warnings.append(f"{field_name} appears to be a test value")
-            debug_monitor.log("INFO", f"Suspicious test value detected in {field_name}", "VALIDATION", value=name.lower())
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        debug_monitor.log_performance(f"{field_name}_validation", duration_ms, len(errors) == 0)
-        
-        if errors:
-            debug_monitor.log("ERROR", f"{field_name} validation completed with errors", "VALIDATION", error_count=len(errors))
-        else:
-            debug_monitor.log("INFO", f"{field_name} validation passed", "VALIDATION")
-        
-        return errors, warnings
-    
-    @staticmethod
-    def validate_address(address: str) -> Tuple[List[str], List[str]]:
-        """Validate street address with debug logging"""
-        start_time = time.time()
-        errors = []
-        warnings = []
-        
-        debug_monitor.log("INFO", "Starting address validation", "VALIDATION", address_length=len(address) if address else 0)
-        
-        if not address or not address.strip():
-            errors.append("Street address is required")
-            debug_monitor.log("WARNING", "Address validation failed - empty field", "VALIDATION")
-            return errors, warnings
-        
-        address = address.strip()
-        
-        if len(address) > 100:
-            errors.append("Street address cannot exceed 100 characters")
-            debug_monitor.log("WARNING", "Address validation failed - too long", "VALIDATION", length=len(address))
-        
-        if not re.search(r'\d', address):
-            warnings.append("Street address should contain a house number")
-            debug_monitor.log("INFO", "Address warning - no house number detected", "VALIDATION")
-        
-        # Check for PO Box
-        if re.search(r'\b(po|p\.o\.)\s*box\b', address, re.IGNORECASE):
-            warnings.append("PO Box addresses may have delivery limitations")
-            debug_monitor.log("INFO", "PO Box detected in address", "VALIDATION")
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        debug_monitor.log_performance("address_validation", duration_ms, len(errors) == 0)
-        
-        if errors:
-            debug_monitor.log("ERROR", "Address validation completed with errors", "VALIDATION", error_count=len(errors))
-        else:
-            debug_monitor.log("INFO", "Address validation passed", "VALIDATION")
-        
-        return errors, warnings
-    
-    @staticmethod
-    def validate_city(city: str) -> Tuple[List[str], List[str]]:
-        """Validate city with debug logging"""
-        start_time = time.time()
-        errors = []
-        warnings = []
-        
-        debug_monitor.log("INFO", "Starting city validation", "VALIDATION")
-        
-        if not city or not city.strip():
-            errors.append("City is required")
-            return errors, warnings
-        
-        city = city.strip()
-        
-        if len(city) > 50:
-            errors.append("City cannot exceed 50 characters")
-        
-        if not re.match(r"^[a-zA-Z\s\-'\.]+$", city):
-            errors.append("City can only contain letters, spaces, hyphens, apostrophes, and periods")
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        debug_monitor.log_performance("city_validation", duration_ms, len(errors) == 0)
-        
-        return errors, warnings
-    
-    @staticmethod
-    def validate_state(state: str) -> Tuple[List[str], List[str]]:
-        """Validate state with debug logging"""
-        start_time = time.time()
-        errors = []
-        warnings = []
-        
-        debug_monitor.log("INFO", "Starting state validation", "VALIDATION", state=state)
-        
-        if not state or not state.strip():
-            errors.append("State is required")
-            return errors, warnings
-        
-        state = state.strip().upper()
-        
-        if len(state) != 2:
-            errors.append("State must be a 2-letter code (e.g., CA, NY, TX)")
-        elif state not in EnhancedValidator.US_STATES:
-            errors.append(f"'{state}' is not a valid US state code")
-            debug_monitor.log("WARNING", "Invalid state code provided", "VALIDATION", state=state)
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        debug_monitor.log_performance("state_validation", duration_ms, len(errors) == 0)
-        
-        return errors, warnings
-    
-    @staticmethod
-    def validate_zip_code(zip_code: str) -> Tuple[List[str], List[str]]:
-        """Validate ZIP code with debug logging"""
-        start_time = time.time()
-        errors = []
-        warnings = []
-        
-        debug_monitor.log("INFO", "Starting ZIP code validation", "VALIDATION")
-        
-        if not zip_code or not zip_code.strip():
-            errors.append("ZIP code is required")
-            return errors, warnings
-        
-        zip_code = zip_code.strip()
-        
-        if not re.match(r'^\d{5}(-\d{4})?$', zip_code):
-            errors.append("ZIP code must be 5 digits or 5+4 format (e.g., 12345 or 12345-6789)")
-        
-        if zip_code == "00000" or zip_code == "00000-0000":
-            errors.append("ZIP code cannot be all zeros")
-            debug_monitor.log("WARNING", "Invalid ZIP code - all zeros", "VALIDATION")
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        debug_monitor.log_performance("zip_validation", duration_ms, len(errors) == 0)
-        
-        return errors, warnings
-
-
 def apply_enterprise_saas_css():
-    """Apply modern enterprise SaaS styling with warmer colors"""
+    """Apply modern enterprise SaaS styling"""
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -706,42 +534,6 @@ def display_status_message(message: str, status_type: str = "info"):
     st.markdown(f'<div class="status-{status_type}">{icon} {message}</div>', unsafe_allow_html=True)
 
 
-def display_validation_errors(errors: List[str], warnings: List[str] = None):
-    """Display validation errors and warnings"""
-    if errors:
-        for error in errors:
-            display_status_message(error, "error")
-    
-    if warnings:
-        for warning in warnings:
-            display_status_message(warning, "warning")
-
-
-def load_usps_credentials() -> Tuple[Optional[str], Optional[str]]:
-    """Load USPS credentials with debug logging"""
-    debug_monitor.log("INFO", "Loading USPS credentials", "CONFIG")
-    
-    try:
-        if hasattr(st, 'secrets'):
-            client_id = st.secrets.get("USPS_CLIENT_ID", "")
-            client_secret = st.secrets.get("USPS_CLIENT_SECRET", "")
-            if client_id and client_secret:
-                debug_monitor.log("INFO", "USPS credentials loaded from Streamlit secrets", "CONFIG")
-                return client_id, client_secret
-    except Exception as e:
-        debug_monitor.log("WARNING", f"Failed to load from Streamlit secrets: {str(e)}", "CONFIG")
-    
-    client_id = os.getenv('USPS_CLIENT_ID', '')
-    client_secret = os.getenv('USPS_CLIENT_SECRET', '')
-    
-    if client_id and client_secret:
-        debug_monitor.log("INFO", "USPS credentials loaded from environment variables", "CONFIG")
-        return client_id, client_secret
-    
-    debug_monitor.log("ERROR", "USPS credentials not found", "CONFIG")
-    return None, None
-
-
 def render_api_status(client_id: Optional[str], client_secret: Optional[str]):
     """Render USPS API connection status"""
     if client_id and client_secret:
@@ -763,22 +555,12 @@ def render_api_status(client_id: Optional[str], client_secret: Optional[str]):
 def render_single_validation():
     """Render single validation form - Clean Professional Version"""
     
-    #st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    #st.markdown('<div class="section-header">Single Record Validation</div>', unsafe_allow_html=True)
-    st.markdown('''
-        <div class="form-section">
-            <div class="section-header">Single Record Validation</div>
-        </div>
-        ''', unsafe_allow_html=True)
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Single Record Validation</div>', unsafe_allow_html=True)
     
     # Personal Information Section
-    #st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    #st.markdown('<div class="form-group-title">Personal Information</div>', unsafe_allow_html=True)
-    st.markdown('''
-        <div class="form-section">
-            <div class="form-group-title">Personal Information</div>
-        </div>
-        ''', unsafe_allow_html=True)
+    st.markdown('<div class="form-section">', unsafe_allow_html=True)
+    st.markdown('<div class="form-group-title">Personal Information</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
@@ -797,16 +579,11 @@ def render_single_validation():
             help="Enter the person's last name"
         )
     
-    #st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Address Information Section
-    #st.markdown('<div class="form-section">', unsafe_allow_html=True)
-    #st.markdown('<div class="form-group-title">Address Information</div>', unsafe_allow_html=True)
-    st.markdown('''
-        <div class="form-section">
-            <div class="form-group-title">Address Information</div>
-        </div>
-        ''', unsafe_allow_html=True)
+    st.markdown('<div class="form-section">', unsafe_allow_html=True)
+    st.markdown('<div class="form-group-title">Address Information</div>', unsafe_allow_html=True)
     
     street_address = st.text_input(
         "Street Address", 
@@ -839,9 +616,9 @@ def render_single_validation():
             help="Enter 5-digit ZIP code or ZIP+4 format"
         )
     
-    #st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    # Validation Logic (simplified, no debug output)
+    # Validation Logic
     all_fields_have_content = (
         first_name and len(first_name.strip()) > 0 and
         last_name and len(last_name.strip()) > 0 and
@@ -861,7 +638,6 @@ def render_single_validation():
             type="primary",
             use_container_width=True
         ):
-            # Process the validation
             process_single_validation(first_name, last_name, street_address, city, state, zip_code)
     
     # Helpful guidance (only if fields are missing)
@@ -886,7 +662,7 @@ def render_single_validation():
                 f"Please complete the following required fields: {', '.join(missing_fields)}", 
                 "info"
             )
-            #st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
     
     # Usage Instructions
     with st.expander("ℹ️ How to Use This Tool"):
@@ -911,11 +687,9 @@ def render_single_validation():
 
 
 def process_single_validation(first_name: str, last_name: str, street_address: str, city: str, state: str, zip_code: str):
-    """Process single record validation with comprehensive monitoring"""
+    """Process single record validation"""
     
-    debug_monitor.log("INFO", "Starting single validation process", "VALIDATION", 
-                     first_name=first_name, last_name=last_name, city=city, state=state)
-    
+    debug_monitor.log("INFO", "Starting single validation process", "VALIDATION")
     start_time = time.time()
     
     # Load credentials
@@ -951,8 +725,6 @@ def process_single_validation(first_name: str, last_name: str, street_address: s
             name_duration = int((time.time() - name_start) * 1000)
             
             debug_monitor.log_performance("name_validation_full", name_duration, name_result['valid'])
-            debug_monitor.log("INFO", "Name validation completed", "VALIDATION", 
-                            valid=name_result['valid'], confidence=name_result['confidence'])
             
             # Validate address
             status_text.text("Validating address with USPS...")
@@ -974,12 +746,8 @@ def process_single_validation(first_name: str, last_name: str, street_address: s
             
             if address_result.get('success', False):
                 debug_monitor.log_performance("address_validation_full", address_duration, True)
-                debug_monitor.log("INFO", "Address validation completed successfully", "VALIDATION",
-                                deliverable=address_result.get('deliverable', False))
             else:
                 debug_monitor.log_performance("address_validation_full", address_duration, False)
-                debug_monitor.log("ERROR", "Address validation failed", "VALIDATION",
-                                error=address_result.get('error', 'Unknown error'))
                 debug_monitor.update_stats('api_errors')
             
             progress_bar.progress(100)
@@ -999,7 +767,7 @@ def process_single_validation(first_name: str, last_name: str, street_address: s
             display_results(name_result, address_result)
             
     except Exception as e:
-        debug_monitor.log("ERROR", f"Single validation process failed: {str(e)}", "VALIDATION", error_type=type(e).__name__)
+        debug_monitor.log("ERROR", f"Single validation process failed: {str(e)}", "VALIDATION")
         debug_monitor.update_stats('failed_validations')
         display_status_message(f"Validation error: {str(e)}", "error")
 
@@ -1193,7 +961,7 @@ def render_bulk_validation():
 
 
 def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
-    """Process bulk validation with comprehensive monitoring"""
+    """Process bulk validation with enhanced features"""
     
     debug_monitor.log("INFO", "Starting bulk validation process", "BULK_VALIDATION", record_count=len(df))
     batch_start_time = time.time()
@@ -1225,7 +993,7 @@ def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
             status_text.text(f"Processing record {i + 1} of {len(df)}")
             
             debug_monitor.update_stats('total_validations')
-            debug_monitor.update_stats('api_calls', 2)  # Name + Address validation
+            debug_monitor.update_stats('api_calls', 2)
             
             try:
                 # Clean and validate data
@@ -1236,6 +1004,9 @@ def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
                 state = str(row.get('state', '')).strip().upper()
                 zip_code = str(row.get('zip_code', '')).strip()
                 
+                # Store original address for comparison
+                original_address = f"{street_address}, {city}, {state} {zip_code}"
+                
                 # Validate
                 name_result = name_validator.validate(first_name, last_name)
                 address_result = address_validator.validate_address({
@@ -1245,19 +1016,111 @@ def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
                     'zip_code': zip_code
                 })
                 
+                # Determine address type (Business/Residential)
+                address_type = "Unknown"
+                if address_result.get('success') and address_result.get('metadata'):
+                    metadata = address_result['metadata']
+                    if metadata.get('business'):
+                        address_type = "Business"
+                    else:
+                        address_type = "Residential"
+                
                 # Compile result
                 overall_valid = name_result['valid'] and address_result.get('deliverable', False)
                 
+                # Base result structure
                 result = {
                     'Row': i + 1,
                     'First Name': first_name,
                     'Last Name': last_name,
-                    'Address': f"{street_address}, {city}, {state} {zip_code}",
+                    'Original Address': original_address,
                     'Name Status': 'Valid' if name_result['valid'] else 'Invalid',
                     'Address Status': 'Deliverable' if address_result.get('deliverable', False) else 'Not Deliverable',
+                    'Address Type': address_type,
                     'Overall Status': 'Valid' if overall_valid else 'Invalid',
                     'Confidence': f"{((name_result.get('confidence', 0) + address_result.get('confidence', 0)) / 2):.1%}"
                 }
+                
+                # Add suggestions only if checkbox is checked
+                if include_suggestions:
+                    # Add name suggestions
+                    first_name_suggestions = []
+                    last_name_suggestions = []
+                    
+                    if name_result.get('suggestions'):
+                        if 'first_name' in name_result['suggestions'] and name_result['suggestions']['first_name']:
+                            first_name_suggestions = [s['suggestion'] for s in name_result['suggestions']['first_name'][:3]]
+                        if 'last_name' in name_result['suggestions'] and name_result['suggestions']['last_name']:
+                            last_name_suggestions = [s['suggestion'] for s in name_result['suggestions']['last_name'][:3]]
+                    
+                    result['First Name Suggestions'] = ', '.join(first_name_suggestions) if first_name_suggestions else 'None'
+                    result['Last Name Suggestions'] = ', '.join(last_name_suggestions) if last_name_suggestions else 'None'
+                    
+                    # Add address standardization and corrections
+                    if address_result.get('success') and address_result.get('standardized'):
+                        std = address_result['standardized']
+                        standardized_address = f"{std['street_address']}, {std['city']}, {std['state']} {std['zip_code']}"
+                        result['USPS Standardized Address'] = standardized_address
+                        
+                        # Compare original vs standardized to show corrections
+                        corrections = []
+                        
+                        # Check street address changes
+                        if street_address.upper() != std['street_address'].upper():
+                            corrections.append(f"Street: '{street_address}' → '{std['street_address']}'")
+                        
+                        # Check city changes
+                        if city.upper() != std['city'].upper():
+                            corrections.append(f"City: '{city}' → '{std['city']}'")
+                        
+                        # Check state changes
+                        if state.upper() != std['state'].upper():
+                            corrections.append(f"State: '{state}' → '{std['state']}'")
+                        
+                        # Check ZIP changes
+                        original_zip = zip_code.split('-')[0]
+                        standardized_zip = std['zip_code'].split('-')[0]
+                        if original_zip != standardized_zip:
+                            corrections.append(f"ZIP: '{zip_code}' → '{std['zip_code']}'")
+                        elif len(std['zip_code']) > len(zip_code):
+                            corrections.append(f"ZIP+4: '{zip_code}' → '{std['zip_code']}'")
+                        
+                        result['Address Corrections'] = '; '.join(corrections) if corrections else 'No corrections needed'
+                        
+                    else:
+                        result['USPS Standardized Address'] = 'Not Available'
+                        if address_result.get('error'):
+                            result['Address Corrections'] = f"Error: {address_result['error']}"
+                        else:
+                            result['Address Corrections'] = 'Unable to standardize'
+                    
+                    # Add detailed metadata
+                    metadata_details = []
+                    if address_result.get('metadata'):
+                        metadata = address_result['metadata']
+                        
+                        if metadata.get('vacant'):
+                            metadata_details.append('Vacant Property')
+                        if metadata.get('centralized'):
+                            metadata_details.append('Centralized Delivery')
+                        if metadata.get('carrier_route'):
+                            metadata_details.append(f"Route: {metadata['carrier_route']}")
+                        if metadata.get('dpv_confirmation'):
+                            dpv_meanings = {
+                                'Y': 'Deliverable',
+                                'N': 'Not Deliverable', 
+                                'D': 'Deliverable (Missing Unit)'
+                            }
+                            dpv_meaning = dpv_meanings.get(metadata['dpv_confirmation'], metadata['dpv_confirmation'])
+                            metadata_details.append(f"DPV: {dpv_meaning}")
+                    
+                    result['Address Details'] = '; '.join(metadata_details) if metadata_details else 'Standard delivery'
+                    
+                    # Add delivery point information if available
+                    if address_result.get('metadata', {}).get('delivery_point'):
+                        result['Delivery Point'] = address_result['metadata']['delivery_point']
+                    else:
+                        result['Delivery Point'] = 'Not Available'
                 
                 if overall_valid:
                     success_count += 1
@@ -1274,14 +1137,29 @@ def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
                 debug_monitor.update_stats('failed_validations')
                 debug_monitor.update_stats('api_errors')
                 
-                results.append({
+                # Error result structure
+                error_result = {
                     'Row': i + 1,
                     'First Name': str(row.get('first_name', '')),
                     'Last Name': str(row.get('last_name', '')),
-                    'Address': f"{row.get('street_address', '')}, {row.get('city', '')}, {row.get('state', '')} {row.get('zip_code', '')}",
+                    'Original Address': f"{row.get('street_address', '')}, {row.get('city', '')}, {row.get('state', '')} {row.get('zip_code', '')}",
+                    'Name Status': 'Error',
+                    'Address Status': 'Error',
+                    'Address Type': 'Error',
                     'Overall Status': f'Error: {str(e)[:50]}',
                     'Confidence': '0%'
-                })
+                }
+                
+                # Add empty suggestion columns if suggestions are enabled
+                if include_suggestions:
+                    error_result['First Name Suggestions'] = 'Error'
+                    error_result['Last Name Suggestions'] = 'Error'
+                    error_result['USPS Standardized Address'] = 'Error'
+                    error_result['Address Corrections'] = 'Error'
+                    error_result['Address Details'] = 'Error'
+                    error_result['Delivery Point'] = 'Error'
+                
+                results.append(error_result)
         
         # Complete processing
         progress_bar.progress(1.0)
@@ -1297,15 +1175,15 @@ def process_bulk_validation(df: pd.DataFrame, include_suggestions: bool):
                          total_records=len(df), success_count=success_count, error_count=error_count)
         
         # Display results
-        display_bulk_results(pd.DataFrame(results), success_count, error_count)
+        display_bulk_results(pd.DataFrame(results), success_count, error_count, include_suggestions)
         
     except Exception as e:
         debug_monitor.log("ERROR", f"Bulk validation process failed: {str(e)}", "BULK_VALIDATION")
         display_status_message(f"Batch validation error: {str(e)}", "error")
 
 
-def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_count: int):
-    """Display bulk validation results with enterprise styling"""
+def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_count: int, include_suggestions: bool = False):
+    """Display bulk validation results with enhanced metrics"""
     
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-header">Batch Validation Results</div>', unsafe_allow_html=True)
@@ -1314,6 +1192,12 @@ def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_cou
     total_records = len(results_df)
     success_rate = success_count / total_records if total_records > 0 else 0
     
+    # Calculate address type statistics
+    business_count = len(results_df[results_df['Address Type'] == 'Business'])
+    residential_count = len(results_df[results_df['Address Type'] == 'Residential'])
+    unknown_count = len(results_df[results_df['Address Type'] == 'Unknown']) + len(results_df[results_df['Address Type'] == 'Error'])
+    
+    # Top row metrics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -1349,17 +1233,134 @@ def display_bulk_results(results_df: pd.DataFrame, success_count: int, error_cou
         </div>
         ''', unsafe_allow_html=True)
     
-    # Results table
-    st.dataframe(results_df, use_container_width=True)
+    # Address type breakdown
+    st.markdown('<div class="form-section">', unsafe_allow_html=True)
+    st.markdown('<div class="form-group-title">Address Type Breakdown</div>', unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        business_rate = business_count / total_records if total_records > 0 else 0
+        st.markdown(f'''
+        <div class="metric-card">
+            <div class="metric-value status-valid">{business_count}</div>
+            <div class="metric-label">Business ({business_rate:.1%})</div>
+        </div>
+        ''', unsafe_allow_html=True)
+    
+    with col2:
+        residential_rate = residential_count / total_records if total_records > 0 else 0
+        st.markdown(f'''
+        <div class="metric-card">
+            <div class="metric-value status-valid">{residential_count}</div>
+            <div class="metric-label">Residential ({residential_rate:.1%})</div>
+        </div>
+        ''', unsafe_allow_html=True)
+    
+    with col3:
+        unknown_rate = unknown_count / total_records if total_records > 0 else 0
+        st.markdown(f'''
+        <div class="metric-card">
+            <div class="metric-value status-warning">{unknown_count}</div>
+            <div class="metric-label">Unknown/Error ({unknown_rate:.1%})</div>
+        </div>
+        ''', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Show info about suggestions and corrections
+    if include_suggestions:
+        display_status_message("✅ Enhanced results with suggestions, USPS corrections, and detailed address analysis", "info")
+        
+        # Calculate correction statistics
+        if 'Address Corrections' in results_df.columns:
+            corrections_made = len(results_df[
+                (results_df['Address Corrections'] != 'No corrections needed') & 
+                (results_df['Address Corrections'] != 'Error') &
+                (results_df['Address Corrections'] != 'Unable to standardize')
+            ])
+            
+            if corrections_made > 0:
+                display_status_message(f"📝 USPS made corrections to {corrections_made} addresses ({corrections_made/total_records:.1%})", "warning")
+    else:
+        display_status_message("ℹ️ Basic validation results only (suggestions and corrections disabled)", "info")
+    
+    # Results table with improved formatting
+    st.markdown('<div class="form-section">', unsafe_allow_html=True)
+    st.markdown('<div class="form-group-title">Detailed Results</div>', unsafe_allow_html=True)
+    
+    # Apply conditional formatting for better readability
+    def highlight_status(val):
+        if val == 'Valid' or val == 'Deliverable':
+            return 'background-color: #d1fae5; color: #065f46'
+        elif val in ['Invalid', 'Not Deliverable', 'Error']:
+            return 'background-color: #fee2e2; color: #991b1b'
+        elif val == 'Business':
+            return 'background-color: #dbeafe; color: #1e40af'
+        elif val == 'Residential':
+            return 'background-color: #f3e8ff; color: #6b21a8'
+        return ''
+    
+    # Apply styling to key columns
+    styled_df = results_df.style.applymap(
+        highlight_status, 
+        subset=['Name Status', 'Address Status', 'Overall Status', 'Address Type']
+    )
+    
+    st.dataframe(styled_df, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Download results
     csv_results = results_df.to_csv(index=False)
-    st.download_button(
-        label="Download Results",
-        data=csv_results,
-        file_name=f"validation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv"
-    )
+    filename_suffix = "_enhanced" if include_suggestions else "_basic"
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            label="📥 Download Results (CSV)",
+            data=csv_results,
+            file_name=f"validation_results{filename_suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    
+    with col2:
+        # Create Excel download with multiple sheets
+        try:
+            import io
+            
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                # Main results
+                results_df.to_excel(writer, sheet_name='Validation Results', index=False)
+                
+                # Summary statistics
+                summary_data = {
+                    'Metric': ['Total Records', 'Valid Records', 'Invalid Records', 'Success Rate', 
+                              'Business Addresses', 'Residential Addresses', 'Unknown/Error Addresses'],
+                    'Value': [total_records, success_count, error_count, f"{success_rate:.1%}",
+                             business_count, residential_count, unknown_count]
+                }
+                summary_df = pd.DataFrame(summary_data)
+                summary_df.to_excel(writer, sheet_name='Summary', index=False)
+                
+                if include_suggestions and 'Address Corrections' in results_df.columns:
+                    # Corrections summary
+                    corrections_df = results_df[results_df['Address Corrections'] != 'No corrections needed'].copy()
+                    corrections_df = corrections_df[['Row', 'Original Address', 'USPS Standardized Address', 'Address Corrections']]
+                    corrections_df.to_excel(writer, sheet_name='Address Corrections', index=False)
+            
+            excel_data = excel_buffer.getvalue()
+            
+            st.download_button(
+                label="📊 Download Results (Excel)",
+                data=excel_data,
+                file_name=f"validation_results{filename_suffix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        except ImportError:
+            st.info("Excel download requires xlsxwriter. Install with: pip install xlsxwriter")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
