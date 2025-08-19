@@ -761,40 +761,87 @@ def render_api_status(client_id: Optional[str], client_secret: Optional[str]):
 
 
 def render_single_validation():
-    """Render single validation form - NO FORM VERSION"""
+    """Render single validation form - Clean Professional Version"""
     
-    st.subheader("Single Record Validation")
+    #st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    #st.markdown('<div class="section-header">Single Record Validation</div>', unsafe_allow_html=True)
+    st.markdown('''
+        <div class="form-section">
+            <div class="section-header">Single Record Validation</div>
+        </div>
+        ''', unsafe_allow_html=True)
     
-    st.write("**Personal Information**")
+    # Personal Information Section
+    #st.markdown('<div class="form-section">', unsafe_allow_html=True)
+    #st.markdown('<div class="form-group-title">Personal Information</div>', unsafe_allow_html=True)
+    st.markdown('''
+        <div class="form-section">
+            <div class="form-group-title">Personal Information</div>
+        </div>
+        ''', unsafe_allow_html=True)
+    
     col1, col2 = st.columns(2)
     
     with col1:
-        first_name = st.text_input("First Name", key="fn")
+        first_name = st.text_input(
+            "First Name", 
+            key="fn",
+            placeholder="Enter first name",
+            help="Enter the person's first name"
+        )
     with col2:
-        last_name = st.text_input("Last Name", key="ln")
+        last_name = st.text_input(
+            "Last Name", 
+            key="ln",
+            placeholder="Enter last name", 
+            help="Enter the person's last name"
+        )
     
-    st.write("**Address Information**")
-    street_address = st.text_input("Street Address", key="sa")
+    #st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Address Information Section
+    #st.markdown('<div class="form-section">', unsafe_allow_html=True)
+    #st.markdown('<div class="form-group-title">Address Information</div>', unsafe_allow_html=True)
+    st.markdown('''
+        <div class="form-section">
+            <div class="form-group-title">Address Information</div>
+        </div>
+        ''', unsafe_allow_html=True)
+    
+    street_address = st.text_input(
+        "Street Address", 
+        key="sa",
+        placeholder="123 Main Street, Apt 4B",
+        help="Enter the complete street address including apartment/unit number if applicable"
+    )
     
     col3, col4, col5 = st.columns([3, 1, 2])
     with col3:
-        city = st.text_input("City", key="city")
+        city = st.text_input(
+            "City", 
+            key="city",
+            placeholder="Enter city",
+            help="Enter the city name"
+        )
     with col4:
-        state = st.text_input("State", key="state")
+        state = st.text_input(
+            "State", 
+            key="state",
+            placeholder="CA",
+            help="Enter 2-letter state code (e.g., CA, NY, TX)",
+            max_chars=2
+        )
     with col5:
-        zip_code = st.text_input("ZIP Code", key="zip")
+        zip_code = st.text_input(
+            "ZIP Code", 
+            key="zip",
+            placeholder="12345 or 12345-6789",
+            help="Enter 5-digit ZIP code or ZIP+4 format"
+        )
     
-    # Real-time debug info
-    st.write("---")
-    st.write("**🔍 REAL-TIME DEBUG INFO:**")
-    st.write(f"First Name: '{first_name}' (length: {len(first_name) if first_name else 0})")
-    st.write(f"Last Name: '{last_name}' (length: {len(last_name) if last_name else 0})")
-    st.write(f"Street: '{street_address}' (length: {len(street_address) if street_address else 0})")
-    st.write(f"City: '{city}' (length: {len(city) if city else 0})")
-    st.write(f"State: '{state}' (length: {len(state) if state else 0})")
-    st.write(f"ZIP: '{zip_code}' (length: {len(zip_code) if zip_code else 0})")
+    #st.markdown('</div>', unsafe_allow_html=True)
     
-    # Simple check
+    # Validation Logic (simplified, no debug output)
     all_fields_have_content = (
         first_name and len(first_name.strip()) > 0 and
         last_name and len(last_name.strip()) > 0 and
@@ -804,36 +851,63 @@ def render_single_validation():
         zip_code and len(zip_code.strip()) > 0
     )
     
-    st.write(f"**ALL FIELDS FILLED: {all_fields_have_content}**")
+    # Validation Button
+    button_col1, button_col2, button_col3 = st.columns([1, 2, 1])
     
-    if all_fields_have_content:
-        st.success("✅ ALL FIELDS DETECTED - READY FOR VALIDATION")
-    else:
-        st.warning("❌ SOME FIELDS MISSING")
+    with button_col2:
+        if st.button(
+            "🔍 Validate Record", 
+            disabled=not all_fields_have_content, 
+            type="primary",
+            use_container_width=True
+        ):
+            # Process the validation
+            process_single_validation(first_name, last_name, street_address, city, state, zip_code)
     
-    # Regular button (not in form)
-    if st.button("Validate Record", disabled=not all_fields_have_content, type="primary"):
-        st.balloons()
-        st.success("🎉 VALIDATION TRIGGERED!")
-        st.write("Form data received:")
-        st.json({
-            "first_name": first_name,
-            "last_name": last_name,
-            "street_address": street_address,
-            "city": city,
-            "state": state,
-            "zip_code": zip_code
-        })
+    # Helpful guidance (only if fields are missing)
+    if not all_fields_have_content:
+        missing_fields = []
+        if not first_name or not first_name.strip():
+            missing_fields.append("First Name")
+        if not last_name or not last_name.strip():
+            missing_fields.append("Last Name")
+        if not street_address or not street_address.strip():
+            missing_fields.append("Street Address")
+        if not city or not city.strip():
+            missing_fields.append("City")
+        if not state or not state.strip():
+            missing_fields.append("State")
+        if not zip_code or not zip_code.strip():
+            missing_fields.append("ZIP Code")
         
-        # Do actual validation here
-        process_single_validation(first_name, last_name, street_address, city, state, zip_code)
+        if missing_fields:
+            st.markdown('<div class="form-section">', unsafe_allow_html=True)
+            display_status_message(
+                f"Please complete the following required fields: {', '.join(missing_fields)}", 
+                "info"
+            )
+            #st.markdown('</div>', unsafe_allow_html=True)
     
-    st.write("---")
-    st.write("**📝 INSTRUCTIONS:**")
-    st.write("1. Type in each field above")
-    st.write("2. Watch the debug info update in real-time")
-    st.write("3. When all fields filled, button should enable")
-    st.write("4. This version uses NO FORM - just regular inputs")
+    # Usage Instructions
+    with st.expander("ℹ️ How to Use This Tool"):
+        st.markdown("""
+        **Step-by-step Instructions:**
+        
+        1. **Enter Personal Information**: Fill in the person's first and last name
+        2. **Enter Address Details**: Provide the complete street address, city, state, and ZIP code
+        3. **Validate**: Click the "Validate Record" button to check the information
+        4. **Review Results**: The system will validate both name and address data using:
+           - US Census name databases for name validation
+           - USPS API for real-time address verification
+        
+        **Tips for Best Results:**
+        - Use complete street addresses (include apartment/unit numbers if applicable)
+        - Enter state as 2-letter codes (CA, NY, TX, etc.)
+        - ZIP codes can be 5-digit (12345) or ZIP+4 format (12345-6789)
+        - Ensure all fields are filled before validation
+        """)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def process_single_validation(first_name: str, last_name: str, street_address: str, city: str, state: str, zip_code: str):
