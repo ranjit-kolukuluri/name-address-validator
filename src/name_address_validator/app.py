@@ -647,10 +647,26 @@ def render_api_status(client_id: Optional[str], client_secret: Optional[str]):
     """Render USPS API connection status"""
     if client_id and client_secret:
         st.markdown('''
-        <div class="api-status">
-            ✓ Connected to USPS API - Real-time Address Validation Active
-        </div>
-        ''', unsafe_allow_html=True)
+    <div class="api-status-topright">
+        ✓ Connected to USPS API - Real-time Address Validation Active
+            </div>
+            <style>
+            .api-status-topright {
+                position: fixed;
+                top: 10px;
+                right: 20px;
+                background-color: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-size: 12px;
+                font-weight: 500;
+                z-index: 999;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            </style>
+    ''', unsafe_allow_html=True)
         debug_monitor.log("INFO", "USPS API status displayed as connected", "UI")
     else:
         st.markdown('''
@@ -1643,7 +1659,7 @@ def render_monitoring_dashboard():
 def main():
     """Main application with enterprise SaaS styling"""
     st.set_page_config(
-        page_title="Enterprise Validator",
+        page_title="Name and Address Validator",
         page_icon="🔍",
         layout="wide",
         initial_sidebar_state="collapsed"
@@ -1660,8 +1676,8 @@ def main():
     # Header with API status
     st.markdown('''
     <div class="enterprise-header">
-        <div class="main-title">Enterprise Validator</div>
-        <div class="subtitle">Professional-grade name and address validation platform</div>
+        <div class="main-title">Name and Address Validator</div>
+        <div class="subtitle">Powered by ML and USPS</div>
     </div>
     ''', unsafe_allow_html=True)
     
