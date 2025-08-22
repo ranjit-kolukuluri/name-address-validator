@@ -1,9 +1,10 @@
 # src/name_address_validator/services/validation_service.py
 """
-Unified validation service that coordinates name and address validation
+Enhanced validation service with address format standardization for multiple CSV files
 """
 
 import time
+import pandas as pd
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 
@@ -11,17 +12,19 @@ from ..validators.name_validator import EnhancedNameValidator
 from ..validators.address_validator import USPSAddressValidator
 from ..utils.config import load_usps_credentials
 from ..utils.logger import debug_logger, performance_tracker
+from ..utils.address_standardizer import AddressFormatStandardizer
 
 
 class ValidationService:
     """
-    Unified validation service that coordinates all validation operations
+    Enhanced validation service with address format standardization
     """
     
     def __init__(self, debug_callback=None):
         self.debug_callback = debug_callback or debug_logger.info
         self.name_validator = EnhancedNameValidator()
         self.address_validator = None
+        self.address_standardizer = AddressFormatStandardizer(debug_callback=self.debug_callback)
         self._initialize_address_validator()
     
     def _initialize_address_validator(self):
@@ -48,17 +51,6 @@ class ValidationService:
                              city: str, state: str, zip_code: str) -> Dict:
         """
         Validate a single complete record (name + address)
-        
-        Args:
-            first_name: Person's first name
-            last_name: Person's last name  
-            street_address: Street address
-            city: City name
-            state: 2-letter state code
-            zip_code: ZIP code (5 or 9 digits)
-            
-        Returns:
-            Dict with comprehensive validation results
         """
         
         self.debug_callback("🔍 Starting single record validation", "SERVICE")
@@ -144,15 +136,65 @@ class ValidationService:
         self.debug_callback(f"🏁 Single record validation completed ({total_duration}ms)", "SERVICE")
         return results
     
-    def validate_batch_records(self, records: List[Dict], include_suggestions: bool = True, 
-                             max_records: Optional[int] = None) -> Dict:
+    def standardize_csv_files(self, file_data_list: List[Tuple[pd.DataFrame, str]]) -> Dict:
         """
-        Validate multiple records in batch
+        Standardize multiple CSV files with various address formats
+        
+        Args:
+            file_data_list: List of (DataFrame, filename) tuples
+            
+        Returns:
+            Dict with standardization results
+        """
+        self.debug_callback(f"📦 Starting CSV standardization for {len(file_data_list)} files", "STANDARDIZATION")
+        start_time = time.time()
+        
+        try:
+            # Use address standardizer to process files
+            standardized_df, standardization_info = self.address_standardizer.standardize_multiple_files(file_data_list)
+            
+            # Get summary
+            summary = self.address_standardizer.get_standardization_summary(standardization_info)
+            
+            duration = int((time.time() - start_time) * 1000)
+            performance_tracker.track("csv_standardization", duration, summary['successful_files'] > 0)
+            
+            result = {
+                'success': True,
+                'standardized_data': standardized_df,
+                'standardization_info': standardization_info,
+                'summary': summary,
+                'processing_time_ms': duration,
+                'total_rows': len(standardized_df)
+            }
+            
+            self.debug_callback(f"✅ CSV standardization completed ({duration}ms): {len(standardized_df)} rows", "STANDARDIZATION")
+            return result
+            
+        except Exception as e:
+            error_msg = f"CSV standardization failed: {str(e)}"
+            self.debug_callback(f"❌ {error_msg}", "STANDARDIZATION")
+            
+            duration = int((time.time() - start_time) * 1000)
+            performance_tracker.track("csv_standardization", duration, False)
+            
+            return {
+                'success': False,
+                'error': error_msg,
+                'processing_time_ms': duration,
+                'total_rows': 0
+            }
+    
+    def validate_batch_records(self, records: List[Dict], include_suggestions: bool = True, 
+                             max_records: Optional[int] = None, source_info: Optional[Dict] = None) -> Dict:
+        """
+        Enhanced batch validation with standardization support
         
         Args:
             records: List of dicts with keys: first_name, last_name, street_address, city, state, zip_code
             include_suggestions: Whether to include name/address suggestions
             max_records: Maximum number of records to process
+            source_info: Optional info about data source (files, standardization etc.)
             
         Returns:
             Dict with batch validation results
@@ -173,11 +215,13 @@ class ValidationService:
             'failed_validations': 0,
             'processing_time_ms': 0,
             'records': [],
+            'source_info': source_info or {},
             'summary': {
                 'business_addresses': 0,
                 'residential_addresses': 0,
                 'unknown_addresses': 0,
-                'corrections_made': 0
+                'corrections_made': 0,
+                'files_processed': source_info.get('files_processed', 0) if source_info else 0
             }
         }
         
@@ -192,6 +236,10 @@ class ValidationService:
                 city = str(record.get('city', '')).strip()
                 state = str(record.get('state', '')).strip().upper()
                 zip_code = str(record.get('zip_code', '')).strip()
+                
+                # Get source file info if available
+                source_file = record.get('source_file', 'unknown')
+                source_row = record.get('source_row_number', i + 1)
                 
                 # Store original address for comparison
                 original_address = f"{street_address}, {city}, {state} {zip_code}"
@@ -217,6 +265,8 @@ class ValidationService:
                 # Build record result
                 record_result = {
                     'row': i + 1,
+                    'source_file': source_file,
+                    'source_row': source_row,
                     'first_name': first_name,
                     'last_name': last_name,
                     'original_address': original_address,
@@ -291,6 +341,8 @@ class ValidationService:
                 # Add error record
                 error_record = {
                     'row': i + 1,
+                    'source_file': record.get('source_file', 'unknown'),
+                    'source_row': record.get('source_row_number', i + 1),
                     'first_name': str(record.get('first_name', '')),
                     'last_name': str(record.get('last_name', '')),
                     'original_address': f"{record.get('street_address', '')}, {record.get('city', '')}, {record.get('state', '')} {record.get('zip_code', '')}",
@@ -325,6 +377,121 @@ class ValidationService:
         
         self.debug_callback(f"🏁 Batch validation completed ({total_duration}ms)", "SERVICE")
         return results
+    
+    def validate_standardized_csv_data(self, standardized_df: pd.DataFrame, include_suggestions: bool = True, 
+                                     max_records: Optional[int] = None, standardization_info: Optional[List[Dict]] = None) -> Dict:
+        """
+        Validate already standardized CSV data
+        
+        Args:
+            standardized_df: Standardized DataFrame with consistent column format
+            include_suggestions: Whether to include suggestions
+            max_records: Maximum records to process
+            standardization_info: Info about the standardization process
+            
+        Returns:
+            Dict with validation results
+        """
+        
+        self.debug_callback(f"🎯 Starting validation of standardized data ({len(standardized_df)} rows)", "SERVICE")
+        
+        # Convert DataFrame to records list
+        records = standardized_df.to_dict('records')
+        
+        # Prepare source info
+        source_info = {
+            'standardization_performed': True,
+            'files_processed': len(standardization_info) if standardization_info else 1,
+            'total_source_rows': len(standardized_df),
+            'standardization_info': standardization_info
+        }
+        
+        # Run batch validation
+        return self.validate_batch_records(
+            records=records,
+            include_suggestions=include_suggestions,
+            max_records=max_records,
+            source_info=source_info
+        )
+    
+    def process_multiple_csv_files(self, file_data_list: List[Tuple[pd.DataFrame, str]], 
+                                 include_suggestions: bool = True, max_records: Optional[int] = None) -> Dict:
+        """
+        Complete pipeline: standardize multiple CSV files and validate them
+        
+        Args:
+            file_data_list: List of (DataFrame, filename) tuples
+            include_suggestions: Whether to include suggestions in validation
+            max_records: Maximum records to process for validation
+            
+        Returns:
+            Dict with complete results including standardization and validation
+        """
+        
+        self.debug_callback(f"🚀 Starting complete pipeline for {len(file_data_list)} files", "PIPELINE")
+        pipeline_start = time.time()
+        
+        try:
+            # Step 1: Standardize CSV files
+            self.debug_callback("📋 Step 1: Standardizing CSV files", "PIPELINE")
+            standardization_result = self.standardize_csv_files(file_data_list)
+            
+            if not standardization_result['success']:
+                return {
+                    'success': False,
+                    'error': 'Standardization failed: ' + standardization_result.get('error', 'Unknown error'),
+                    'stage': 'standardization'
+                }
+            
+            standardized_df = standardization_result['standardized_data']
+            standardization_info = standardization_result['standardization_info']
+            
+            self.debug_callback(f"✅ Standardization complete: {len(standardized_df)} rows ready for validation", "PIPELINE")
+            
+            # Step 2: Validate standardized data
+            self.debug_callback("🔍 Step 2: Validating standardized data", "PIPELINE")
+            validation_result = self.validate_standardized_csv_data(
+                standardized_df=standardized_df,
+                include_suggestions=include_suggestions,
+                max_records=max_records,
+                standardization_info=standardization_info
+            )
+            
+            # Step 3: Combine results
+            total_duration = int((time.time() - pipeline_start) * 1000)
+            performance_tracker.track("complete_pipeline", total_duration, True)
+            
+            combined_result = {
+                'success': True,
+                'pipeline_duration_ms': total_duration,
+                'standardization': standardization_result,
+                'validation': validation_result,
+                'summary': {
+                    'files_processed': len(file_data_list),
+                    'total_source_rows': sum(len(df) for df, _ in file_data_list),
+                    'standardized_rows': len(standardized_df),
+                    'validated_rows': validation_result['processed_records'],
+                    'successful_validations': validation_result['successful_validations'],
+                    'failed_validations': validation_result['failed_validations']
+                }
+            }
+            
+            self.debug_callback(f"🎉 Complete pipeline finished ({total_duration}ms)", "PIPELINE")
+            return combined_result
+            
+        except Exception as e:
+            error_msg = f"Pipeline failed: {str(e)}"
+            self.debug_callback(f"❌ {error_msg}", "PIPELINE")
+            
+            total_duration = int((time.time() - pipeline_start) * 1000)
+            performance_tracker.track("complete_pipeline", total_duration, False)
+            
+            return {
+                'success': False,
+                'error': error_msg,
+                'pipeline_duration_ms': total_duration,
+                'stage': 'unknown'
+            }
     
     def _identify_corrections(self, original_street: str, original_city: str, 
                             original_state: str, original_zip: str, standardized: Dict) -> List[str]:
@@ -380,6 +547,8 @@ class ValidationService:
         return {
             'name_validation_available': True,
             'address_validation_available': self.is_address_validation_available(),
+            'address_standardization_available': True,
+            'multi_file_processing_available': True,
             'usps_configured': self.address_validator is not None,
             'performance_tracking': True,
             'debug_logging': True,
