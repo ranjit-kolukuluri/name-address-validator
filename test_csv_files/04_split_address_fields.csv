@@ -1,0 +1,5 @@
+given_name,family_name,house_number,street_name,apartment,city_name,state_code,zip5,zip4
+Daniel,Moore,123,Main Street,Apt 2A,Dallas,TX,75201,1234
+Emily,Taylor,456,Oak Avenue,,San Antonio,TX,78201,
+Anthony,Clark,789,Pine Road,Unit 5,Austin,TX,73301,5678
+Melissa,Lewis,321,Elm Street,Suite 100,Fort Worth,TX,76101,9012

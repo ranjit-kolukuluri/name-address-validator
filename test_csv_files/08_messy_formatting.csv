@@ -1,0 +1,5 @@
+FirstName,LastName,StreetAddr,City,State,PostalCode,Notes
+  ROBERT  ,  GARCIA  ,  123 Main Street  ,  LOS ANGELES  ,  ca  ,90210-1234,Good address
+jane,smith,456 oak avenue,chicago,IL,60601,Needs cleaning
+MiChAeL,JOHNSON,789 PINE ROAD,HOUSTON,tx,77001-5678,Upper case
+,NoFirstName,321 Elm St Apt B,phoenix,AZ,85001,Missing first name

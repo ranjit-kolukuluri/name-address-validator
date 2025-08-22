@@ -1,0 +1,6 @@
+first_name,last_name,street_address,city,state,zip_code
+Paul,Johnson,741 Ash Boulevard,Jacksonville,FL,32099
+Linda,Brown,852 Hickory Drive,Columbus,OH,43085
+Valid,Person,123 Good Street,Valid City,NY,10001
+Missing,Address,,Missing State,,12345
+Invalid,State,456 Bad Road,Invalid State,XX,00000

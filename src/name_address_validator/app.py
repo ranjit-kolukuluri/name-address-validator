@@ -840,7 +840,7 @@ def render_enhanced_bulk_validation():
     </div>
     ''', unsafe_allow_html=True)
     
-    st.write("Upload multiple CSV files with various address formats. Our system will standardize them, assess US qualification, and validate only qualified addresses.")
+    st.write("Upload multiple CSV files with various address formats. Our system will standardize them, assess address qualification for US requirements, and validate only qualified addresses. Names are processed but not required for qualification.")
     
     # Template section
     with st.expander("📄 Download CSV Template & Format Guide"):
@@ -906,13 +906,13 @@ def render_enhanced_bulk_validation():
                     total_rows += len(df)
                     
                     # Display file info
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    with col1:
-                        st.write(f"📄 **{uploaded_file.name}**")
-                    with col2:
-                        st.write(f"{len(df)} rows")
-                    with col3:
-                        st.write(f"{len(df.columns)} columns")
+                    #col1, col2, col3 = st.columns([3, 1, 1])
+                    #with col1:
+                    #    st.write(f"📄 **{uploaded_file.name}**")
+                    #with col2:
+                    #    st.write(f"{len(df)} rows")
+                    #with col3:
+                    #    st.write(f"{len(df.columns)} columns")
                     
                 except Exception as e:
                     st.error(f"❌ Error reading {uploaded_file.name}: {str(e)}")

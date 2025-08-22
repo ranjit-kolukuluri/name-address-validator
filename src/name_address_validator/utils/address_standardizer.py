@@ -1,18 +1,26 @@
 # src/name_address_validator/utils/address_standardizer.py
 """
-Enhanced Address Format Standardizer with US Address Qualification and Filtering
+Address Format Standardizer - Handles multiple CSV formats and standardizes them
 """
 
 import pandas as pd
 import re
 from typing import Dict, List, Tuple, Optional, Any
-from fuzzywuzzy import fuzz
 import numpy as np
+
+try:
+    from fuzzywuzzy import fuzz
+except ImportError:
+    # Fallback if fuzzywuzzy is not available
+    class fuzz:
+        @staticmethod
+        def ratio(a, b):
+            return 50  # Simple fallback
 
 
 class AddressFormatStandardizer:
     """
-    Enhanced standardizer with US address qualification and filtering
+    Standardizes various address CSV formats into a consistent format for USPS validation
     """
     
     def __init__(self, debug_callback=None):
@@ -106,7 +114,6 @@ class AddressFormatStandardizer:
         self.log(f"🔍 Detecting column mapping for {len(df.columns)} columns: {list(df.columns)}")
         
         detected_mapping = {}
-        available_columns = [col.lower().strip() for col in df.columns]
         
         # Direct matching first
         for standard_col, variations in self.column_mappings.items():
@@ -265,6 +272,7 @@ class AddressFormatStandardizer:
     def qualify_us_address(self, row: Dict) -> Dict:
         """
         Determine if an address qualifies as a valid US address for USPS validation
+        (Names are not part of qualification - only address fields are assessed)
         
         Returns:
             Dict with 'qualified', 'qualification_errors', 'qualification_warnings'
@@ -279,7 +287,7 @@ class AddressFormatStandardizer:
         warnings = []
         qualified = True
         
-        # Check required fields
+        # Check required ADDRESS fields only (names are not part of qualification)
         if not street_address:
             errors.append("Missing street address")
             qualified = False
@@ -503,7 +511,7 @@ class AddressFormatStandardizer:
             if name_col in df.columns:
                 df[name_col] = df[name_col].apply(lambda x: x.title() if x and x != 'nan' else '')
         
-        # Remove rows where all address fields are empty
+        # Remove rows where all ADDRESS fields are empty (names don't matter for qualification)
         address_cols = ['street_address', 'city', 'state', 'zip_code']
         before_count = len(df)
         
@@ -513,7 +521,7 @@ class AddressFormatStandardizer:
         after_count = len(df)
         if before_count != after_count:
             removed = before_count - after_count
-            info['standardization_errors'].append(f"Removed {removed} rows with no address data")
+            info['standardization_errors'].append(f"Removed {removed} rows with no address data (names are not required)")
             self.log(f"🗑️ Removed {removed} rows with no address data")
         
         return df
@@ -542,12 +550,6 @@ class AddressFormatStandardizer:
     def standardize_multiple_files(self, file_data_list: List[Tuple[pd.DataFrame, str]]) -> Tuple[pd.DataFrame, List[Dict]]:
         """
         Standardize multiple CSV files and combine them with qualification assessment
-        
-        Args:
-            file_data_list: List of (DataFrame, filename) tuples
-            
-        Returns:
-            Tuple of (combined_standardized_df, list_of_standardization_info)
         """
         self.log(f"🎯 Starting batch standardization for {len(file_data_list)} files")
         
@@ -643,9 +645,6 @@ class AddressFormatStandardizer:
     def filter_qualified_addresses(self, standardized_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Split standardized data into qualified and disqualified addresses
-        
-        Returns:
-            Tuple of (qualified_df, disqualified_df)
         """
         
         if standardized_df.empty:

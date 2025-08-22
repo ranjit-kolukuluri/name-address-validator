@@ -1,0 +1,11 @@
+file_number,filename,rows,columns,column_names,test_scenario,expected_qualification
+1,01_standard_format.csv,5,6,"first_name, last_name, street_address, city, state, zip_code",Standard format - perfect data,100% qualified
+2,02_alternative_columns.csv,4,6,"fname, lname, addr, town, st, postal","Alternative column names (fname, lname, addr, etc.)",100% qualified
+3,03_combined_addresses.csv,5,4,"first, last, full_address, customer_id",Combined addresses in single field,100% qualified
+4,04_split_address_fields.csv,4,9,"given_name, family_name, house_number, street_name, apartment, city_name, state_code, zip5, zip4","Split address fields (house_number, street_name, etc.)",100% qualified
+5,05_full_state_names.csv,4,6,"first_name, last_name, street_address, city, state, zip_code",Full state names (California instead of CA),100% qualified (after state conversion)
+6,06_mixed_quality_data.csv,5,6,"first_name, last_name, street_address, city, state, zip_code",Mixed quality data (some missing/invalid fields),"60% qualified (3/5 - missing state, invalid state, invalid ZIP)"
+7,07_business_format.csv,4,8,"contact_first, contact_last, company_name, mailing_address, municipality, province, postal, business_type",Business format with company names,100% qualified
+8,08_messy_formatting.csv,4,7,"FirstName, LastName, StreetAddr, City, State, PostalCode, Notes","Messy formatting (case, spaces, inconsistencies)",75% qualified (3/4 - one missing first name but address OK)
+9,09_po_boxes_special_cases.csv,5,6,"first_name, last_name, street_address, city, state, zip_code",PO Boxes and special address cases,100% qualified (PO Boxes are valid US addresses)
+10,10_international_mixed.csv,5,6,"first_name, last_name, street_address, city, state, zip_code",Mixed US/International addresses,"60% qualified (3/5 - invalid states ON, UK)"
