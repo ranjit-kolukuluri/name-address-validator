@@ -1,7 +1,6 @@
-# src/name_address_validator/app.py - Fixed Path Handling
+# src/name_address_validator/app.py - Enhanced with Qualification Preview and Filtering
 """
-Enterprise SaaS Name and Address Validator - Enhanced with Multi-File Address Standardization
-Fixed version with robust path handling
+Enterprise SaaS Name and Address Validator - Enhanced with Multi-File Address Standardization and US Qualification
 """
 
 import streamlit as st
@@ -831,17 +830,17 @@ def display_single_validation_results(result: Dict):
             display_status_message(f"Address validation failed: {address_result.get('error', 'Unknown error')}", "error")
 
 
-def render_bulk_validation():
-    """Enhanced bulk validation interface with multi-file support and standardization"""
-    debug_monitor.log("INFO", "Rendering enhanced bulk validation interface", "UI")
+def render_enhanced_bulk_validation():
+    """Enhanced bulk validation interface with qualification preview and filtering"""
+    debug_monitor.log("INFO", "Rendering enhanced bulk validation interface with qualification", "UI")
     
     st.markdown('''
     <div class="glass-card">
-        <div class="section-header">Enhanced Batch Processing with Address Standardization</div>
+        <div class="section-header">Enhanced Multi-File Processing with US Address Qualification</div>
     </div>
     ''', unsafe_allow_html=True)
     
-    st.write("Upload multiple CSV files with various address formats. Our system will automatically standardize them before validation.")
+    st.write("Upload multiple CSV files with various address formats. Our system will standardize them, assess US qualification, and validate only qualified addresses.")
     
     # Template section
     with st.expander("📄 Download CSV Template & Format Guide"):
@@ -922,38 +921,42 @@ def render_bulk_validation():
                 display_status_message(f"Successfully loaded {len(file_data_list)} files with {total_rows} total records.", "success")
                 
                 # Preview first file
-                st.markdown("### 👀 Data Preview (First File)")
-                preview_df = file_data_list[0][0]
-                st.dataframe(preview_df.head(5), use_container_width=True)
+                #st.markdown("### 👀 Data Preview (First File)")
+                #preview_df = file_data_list[0][0]
+                #st.dataframe(preview_df.head(5), use_container_width=True)
                 
                 # Processing options
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
                     max_records = st.number_input(
-                        "Maximum records to process",
+                        "Maximum records to validate",
                         min_value=1,
                         max_value=min(1000, total_rows),
                         value=min(100, total_rows),
-                        help="Limit processing to prevent timeout"
+                        help="Applied to qualified addresses only"
                     )
                 
                 with col2:
                     include_suggestions = st.checkbox("Include suggestions", value=True)
                 
                 with col3:
-                    show_standardization = st.checkbox("Show standardization preview", value=True)
+                    show_preview_only = st.checkbox("Preview only (no validation)", value=False, help="Show standardization and qualification results without USPS validation")
                 
                 # Action buttons
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    if st.button("🔄 Preview Standardization", type="secondary", use_container_width=True):
-                        preview_standardization(file_data_list[:2])  # Preview first 2 files
+                    if st.button("📋 Generate Standardization & Qualification Preview", type="secondary", use_container_width=True):
+                        generate_qualification_preview(file_data_list)
                 
                 with col2:
-                    if st.button("🚀 Start Complete Processing", type="primary", use_container_width=True):
-                        process_multiple_csv_files(file_data_list, include_suggestions, max_records, show_standardization)
+                    if show_preview_only:
+                        if st.button("🔄 Generate Preview Only", type="primary", use_container_width=True):
+                            generate_qualification_preview(file_data_list)
+                    else:
+                        if st.button("🚀 Complete Processing Pipeline", type="primary", use_container_width=True):
+                            process_complete_pipeline_with_preview(file_data_list, include_suggestions, max_records)
             else:
                 display_status_message("No valid CSV files could be loaded.", "error")
                 
@@ -962,86 +965,177 @@ def render_bulk_validation():
             debug_monitor.log("ERROR", "Failed to process uploaded CSV files", "BULK_VALIDATION", error=str(e))
 
 
-def preview_standardization(file_data_list: List[Tuple[pd.DataFrame, str]]):
-    """Preview standardization results for uploaded files"""
+def generate_qualification_preview(file_data_list: List[Tuple[pd.DataFrame, str]]):
+    """Generate qualification preview with standardization and US qualification assessment"""
     
-    debug_monitor.log("INFO", "Previewing standardization for uploaded files", "STANDARDIZATION")
+    debug_monitor.log("INFO", "Generating qualification preview for uploaded files", "QUALIFICATION")
     
     try:
         validation_service = ValidationService(debug_callback=lambda msg, cat="SERVICE": debug_monitor.log("INFO", msg, cat))
         
-        with st.spinner("🔄 Analyzing address formats and generating standardization preview..."):
-            standardization_result = validation_service.standardize_csv_files(file_data_list)
+        with st.spinner("🔄 Analyzing address formats, standardizing data, and assessing US qualification..."):
+            standardization_result = validation_service.standardize_and_qualify_csv_files(file_data_list)
         
         if standardization_result['success']:
-            standardized_df = standardization_result['standardized_data']
-            standardization_info = standardization_result['standardization_info']
-            summary = standardization_result['summary']
+            # Generate comprehensive preview
+            preview_result = validation_service.generate_comprehensive_preview(standardization_result)
             
-            st.markdown("### 🔄 Standardization Preview")
-            
-            # Summary metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Files Processed", summary['successful_files'])
-            
-            with col2:
-                st.metric("Total Rows", summary['total_rows_processed'])
-            
-            with col3:
-                st.metric("Combined Addresses", summary['files_with_combined_addresses'])
-            
-            with col4:
-                error_count = len(summary['common_errors'])
-                st.metric("Issues Found", error_count)
-            
-            # Column mapping details
-            st.markdown("### 📋 Column Mapping Analysis")
-            
-            for info in standardization_info:
-                if 'error' not in info:
-                    st.markdown(f"**File: {info['file_name']}**")
-                    
-                    mapping_text = []
-                    for std_col, source_col in info['detected_mapping'].items():
-                        if source_col != 'combined_address':
-                            mapping_text.append(f"• {source_col} → {std_col}")
-                    
-                    if info.get('combined_address_parsed', False):
-                        combined_col = info['detected_mapping'].get('combined_address', 'unknown')
-                        mapping_text.append(f"• {combined_col} (parsed) → street, city, state, zip")
-                    
-                    st.write("\n".join(mapping_text))
-                    
-                    if info.get('standardization_errors'):
-                        for error in info['standardization_errors']:
-                            display_status_message(f"⚠️ {error}", "warning")
-            
-            # Preview standardized data
-            st.markdown("### 📊 Standardized Data Preview")
-            st.dataframe(standardized_df.head(10), use_container_width=True)
-            
-            if summary['common_errors']:
-                st.markdown("### ⚠️ Issues Found")
-                for error, count in summary['common_errors'].items():
-                    st.write(f"• {error} ({count} occurrences)")
-            
-            display_status_message("✅ Standardization preview complete. Data is ready for validation.", "success")
-            
+            if preview_result['success']:
+                display_comprehensive_qualification_preview(preview_result, standardization_result)
+            else:
+                display_status_message(f"Preview generation failed: {preview_result.get('error', 'Unknown error')}", "error")
         else:
-            display_status_message(f"Standardization preview failed: {standardization_result.get('error', 'Unknown error')}", "error")
+            display_status_message(f"Standardization and qualification failed: {standardization_result.get('error', 'Unknown error')}", "error")
             
     except Exception as e:
-        display_status_message(f"Error generating standardization preview: {str(e)}", "error")
-        debug_monitor.log("ERROR", "Standardization preview failed", "STANDARDIZATION", error=str(e))
+        display_status_message(f"Error generating qualification preview: {str(e)}", "error")
+        debug_monitor.log("ERROR", "Qualification preview failed", "QUALIFICATION", error=str(e))
 
 
-def process_multiple_csv_files(file_data_list: List[Tuple[pd.DataFrame, str]], include_suggestions: bool, 
-                             max_records: int, show_standardization: bool):
-    """Process multiple CSV files with standardization and validation"""
+def display_comprehensive_qualification_preview(preview_result: Dict, standardization_result: Dict):
+    """Display comprehensive preview with qualification breakdown"""
     
-    debug_monitor.log("INFO", f"Starting complete processing pipeline for {len(file_data_list)} files", "PIPELINE")
+    st.markdown("### 🔄 Standardization & US Qualification Preview")
+    
+    overview = preview_result['overview']
+    qualified_preview = preview_result['qualified_preview']
+    disqualified_preview = preview_result['disqualified_preview']
+    file_breakdown = preview_result['file_breakdown']
+    
+    # Overview metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        st.metric("Files Processed", overview['total_files'])
+    
+    with col2:
+        st.metric("Total Rows", overview['total_rows'])
+    
+    with col3:
+        st.metric("✅ Qualified", overview['qualified_rows'])
+    
+    with col4:
+        st.metric("❌ Disqualified", overview['disqualified_rows'])
+    
+    with col5:
+        qualification_rate = overview['qualification_rate']
+        rate_color = "🟢" if qualification_rate > 0.8 else "🟡" if qualification_rate > 0.5 else "🔴"
+        st.metric("Qualification Rate", f"{rate_color} {qualification_rate:.1%}")
+    
+    # Status message
+    if overview['ready_for_usps']:
+        display_status_message(f"✅ {overview['qualified_rows']} addresses qualified for USPS validation ({qualification_rate:.1%} success rate)", "success")
+    else:
+        display_status_message("❌ No qualified US addresses found. Please check your data format.", "error")
+    
+    # File-by-file breakdown
+    if file_breakdown:
+        st.markdown("### 📁 Results by File")
+        
+        for filename, stats in file_breakdown.items():
+            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+            with col1:
+                st.write(f"**{filename}**")
+            with col2:
+                st.write(f"{stats['total']} total")
+            with col3:
+                st.write(f"{stats['qualified']} qualified")
+            with col4:
+                rate_text = f"{stats['rate']:.1%}"
+                if stats['rate'] > 0.8:
+                    st.write(f"🟢 {rate_text}")
+                elif stats['rate'] > 0.5:
+                    st.write(f"🟡 {rate_text}")
+                else:
+                    st.write(f"🔴 {rate_text}")
+    
+    # Qualified addresses preview
+    if qualified_preview['count'] > 0:
+        st.markdown(f"### ✅ Qualified US Addresses ({qualified_preview['count']} total)")
+        st.write("These addresses meet US format requirements and will be validated with USPS:")
+        
+        if qualified_preview['sample_data']:
+            # Create display DataFrame
+            sample_df = pd.DataFrame(qualified_preview['sample_data'])
+            # Show only relevant columns for preview
+            display_columns = ['first_name', 'last_name', 'street_address', 'city', 'state', 'zip_code', 'source_file']
+            available_columns = [col for col in display_columns if col in sample_df.columns]
+            st.dataframe(sample_df[available_columns], use_container_width=True)
+            
+            if qualified_preview['count'] > 10:
+                st.info(f"Showing first 10 of {qualified_preview['count']} qualified addresses")
+    else:
+        st.markdown("### ❌ No Qualified Addresses")
+        display_status_message("No addresses meet US qualification requirements.", "warning")
+    
+    # Disqualified addresses preview
+    if disqualified_preview['count'] > 0:
+        st.markdown(f"### ❌ Disqualified Addresses ({disqualified_preview['count']} total)")
+        
+        # Error analysis
+        if disqualified_preview['top_errors']:
+            st.write("**Most Common Issues:**")
+            for error, count in disqualified_preview['top_errors']:
+                percentage = (count / disqualified_preview['count']) * 100
+                st.write(f"• **{error}**: {count} addresses ({percentage:.1f}%)")
+        
+        # Sample disqualified data
+        if disqualified_preview['sample_data']:
+            with st.expander(f"View Sample Disqualified Addresses (showing 10 of {disqualified_preview['count']})"):
+                sample_df = pd.DataFrame(disqualified_preview['sample_data'])
+                # Show relevant columns including error information
+                display_columns = ['first_name', 'last_name', 'street_address', 'city', 'state', 'zip_code', 'qualification_errors', 'source_file']
+                available_columns = [col for col in display_columns if col in sample_df.columns]
+                st.dataframe(sample_df[available_columns], use_container_width=True)
+    
+    # Download options for standardized data
+    st.markdown("### 📥 Download Standardized Data")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    with col1:
+        if qualified_preview['count'] > 0:
+            qualified_df = standardization_result['qualified_data']
+            qualified_csv = qualified_df.to_csv(index=False)
+            st.download_button(
+                label=f"📥 Download Qualified Addresses ({qualified_preview['count']})",
+                data=qualified_csv,
+                file_name=f"qualified_addresses_{timestamp}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    
+    with col2:
+        if disqualified_preview['count'] > 0:
+            disqualified_df = standardization_result['disqualified_data']
+            disqualified_csv = disqualified_df.to_csv(index=False)
+            st.download_button(
+                label=f"📥 Download Disqualified Addresses ({disqualified_preview['count']})",
+                data=disqualified_csv,
+                file_name=f"disqualified_addresses_{timestamp}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+    
+    with col3:
+        all_standardized_df = standardization_result['standardized_data']
+        all_csv = all_standardized_df.to_csv(index=False)
+        st.download_button(
+            label=f"📥 Download All Standardized ({overview['total_rows']})",
+            data=all_csv,
+            file_name=f"all_standardized_addresses_{timestamp}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+
+def process_complete_pipeline_with_preview(file_data_list: List[Tuple[pd.DataFrame, str]], 
+                                         include_suggestions: bool, max_records: int):
+    """Process complete pipeline with qualification preview and USPS validation"""
+    
+    debug_monitor.log("INFO", f"Starting complete pipeline with preview for {len(file_data_list)} files", "PIPELINE")
     
     try:
         validation_service = ValidationService(debug_callback=lambda msg, cat="SERVICE": debug_monitor.log("INFO", msg, cat))
@@ -1054,52 +1148,55 @@ def process_multiple_csv_files(file_data_list: List[Tuple[pd.DataFrame, str]], i
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        # Step 1: Standardization
-        status_text.text("🔄 Step 1/2: Standardizing address formats across all files...")
-        progress_bar.progress(25)
+        # Step 1: Standardization and qualification
+        status_text.text("🔄 Step 1/3: Standardizing address formats and assessing US qualification...")
+        progress_bar.progress(33)
         
-        pipeline_result = validation_service.process_multiple_csv_files(
+        # Step 2: Preview generation
+        status_text.text("📋 Step 2/3: Generating qualification preview...")
+        progress_bar.progress(66)
+        
+        # Step 3: USPS validation of qualified addresses
+        status_text.text("🔍 Step 3/3: Validating qualified addresses with USPS...")
+        
+        pipeline_result = validation_service.process_complete_pipeline_with_preview(
             file_data_list=file_data_list,
             include_suggestions=include_suggestions,
             max_records=max_records
         )
         
-        progress_bar.progress(75)
-        status_text.text("🔍 Step 2/2: Validating standardized data with USPS...")
+        progress_bar.progress(100)
+        status_text.text("✅ Complete pipeline finished!")
+        time.sleep(1)
+        
+        # Clear progress
+        progress_bar.empty()
+        status_text.empty()
         
         if pipeline_result['success']:
-            progress_bar.progress(100)
-            status_text.text("✅ Processing complete!")
-            time.sleep(1)
-            
-            # Clear progress
-            progress_bar.empty()
-            status_text.empty()
-            
             # Display results
-            display_pipeline_results(pipeline_result, show_standardization)
-            
+            display_complete_pipeline_results(pipeline_result)
         else:
-            progress_bar.empty()
-            status_text.empty()
-            display_status_message(f"Processing failed at {pipeline_result.get('stage', 'unknown')} stage: {pipeline_result.get('error', 'Unknown error')}", "error")
+            display_status_message(f"Pipeline failed at {pipeline_result.get('stage', 'unknown')} stage: {pipeline_result.get('error', 'Unknown error')}", "error")
             
     except Exception as e:
-        debug_monitor.log("ERROR", f"Pipeline processing failed: {str(e)}", "PIPELINE")
+        progress_bar.empty()
+        status_text.empty()
+        debug_monitor.log("ERROR", f"Complete pipeline processing failed: {str(e)}", "PIPELINE")
         display_status_message(f"Processing error: {str(e)}", "error")
 
 
-def display_pipeline_results(pipeline_result: Dict, show_standardization: bool):
-    """Display complete pipeline results with standardization and validation"""
+def display_complete_pipeline_results(pipeline_result: Dict):
+    """Display complete pipeline results with qualification and validation"""
     
-    st.markdown("### 🎉 Processing Results")
+    st.markdown("### 🎉 Complete Processing Results")
     
     summary = pipeline_result['summary']
+    preview_result = pipeline_result['preview']
     validation_result = pipeline_result['validation']
-    standardization_result = pipeline_result['standardization']
     
     # Overall summary metrics
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
         st.metric("Files Processed", summary['files_processed'])
@@ -1108,18 +1205,30 @@ def display_pipeline_results(pipeline_result: Dict, show_standardization: bool):
         st.metric("Source Rows", summary['total_source_rows'])
     
     with col3:
-        st.metric("Standardized", summary['standardized_rows'])
+        st.metric("Qualified", summary['qualified_rows'])
     
     with col4:
-        st.metric("Valid Records", summary['successful_validations'])
+        st.metric("Validated", summary['validated_rows'])
     
     with col5:
+        st.metric("Valid Results", summary['successful_validations'])
+    
+    with col6:
         success_rate = summary['successful_validations'] / summary['validated_rows'] if summary['validated_rows'] > 0 else 0
-        st.metric("Success Rate", f"{success_rate:.1%}")
+        st.metric("USPS Success Rate", f"{success_rate:.1%}")
+    
+    # Qualification overview
+    qualification_rate = summary['qualification_rate']
+    if qualification_rate > 0.8:
+        display_status_message(f"🟢 Excellent qualification rate: {qualification_rate:.1%} of addresses met US requirements", "success")
+    elif qualification_rate > 0.5:
+        display_status_message(f"🟡 Moderate qualification rate: {qualification_rate:.1%} of addresses met US requirements", "warning")
+    else:
+        display_status_message(f"🔴 Low qualification rate: {qualification_rate:.1%} of addresses met US requirements", "error")
     
     # Performance metrics
-    standardization_time = standardization_result.get('processing_time_ms', 0)
-    validation_time = validation_result.get('processing_time_ms', 0)
+    standardization_time = pipeline_result['standardization'].get('processing_time_ms', 0)
+    validation_time = pipeline_result['validation'].get('processing_time_ms', 0)
     total_time = pipeline_result.get('pipeline_duration_ms', 0)
     
     st.markdown("### ⚡ Performance Metrics")
@@ -1132,14 +1241,18 @@ def display_pipeline_results(pipeline_result: Dict, show_standardization: bool):
         st.metric("Validation Time", f"{validation_time / 1000:.1f}s")
     
     with col3:
-        st.metric("Total Time", f"{total_time / 1000:.1f}s")
+        st.metric("Total Pipeline Time", f"{total_time / 1000:.1f}s")
     
-    # Validation results
-    display_enhanced_bulk_results(validation_result, pipeline_result)
+    # Validation results (for qualified addresses only)
+    if validation_result['processed_records'] > 0:
+        display_enhanced_validation_results(validation_result, pipeline_result)
+    else:
+        st.markdown("### ⚠️ No Validation Results")
+        display_status_message("No qualified addresses were available for USPS validation.", "warning")
 
 
-def display_enhanced_bulk_results(validation_result: Dict, pipeline_result: Dict):
-    """Display enhanced bulk validation results with pipeline context"""
+def display_enhanced_validation_results(validation_result: Dict, pipeline_result: Dict):
+    """Display enhanced validation results for qualified addresses"""
     
     results_df = pd.DataFrame(validation_result['records'])
     
@@ -1153,7 +1266,7 @@ def display_enhanced_bulk_results(validation_result: Dict, pipeline_result: Dict
     unknown_count = len(results_df) - business_count - residential_count
     total_records = len(results_df)
     
-    st.markdown("### 🏠 Address Classification")
+    st.markdown("### 🏠 USPS Validation Results by Address Type")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -1171,7 +1284,7 @@ def display_enhanced_bulk_results(validation_result: Dict, pipeline_result: Dict
     # Enhanced info about the process
     has_suggestions = 'first_name_suggestions' in results_df.columns
     if has_suggestions:
-        display_status_message("✅ Enhanced results with suggestions, USPS corrections, and detailed address analysis", "info")
+        display_status_message("✅ Enhanced results with name suggestions, USPS corrections, and detailed address analysis", "info")
         
         # Calculate correction statistics
         if 'address_corrections' in results_df.columns:
@@ -1184,33 +1297,28 @@ def display_enhanced_bulk_results(validation_result: Dict, pipeline_result: Dict
             if corrections_made > 0:
                 display_status_message(f"📝 USPS made corrections to {corrections_made} addresses ({corrections_made/total_records:.1%})", "warning")
     
-    # Source file breakdown
-    if 'source_file' in results_df.columns:
-        st.markdown("### 📁 Results by Source File")
-        file_summary = results_df.groupby('source_file').agg({
-            'overall_status': lambda x: (x == 'Valid').sum(),
-            'row': 'count'
-        }).rename(columns={'overall_status': 'valid_count', 'row': 'total_count'})
+    # Qualification vs validation success breakdown
+    preview_result = pipeline_result.get('preview', {})
+    if preview_result.get('success'):
+        overview = preview_result['overview']
         
-        file_summary['success_rate'] = file_summary['valid_count'] / file_summary['total_count']
+        st.markdown("### 📊 Pipeline Success Breakdown")
+        col1, col2, col3, col4 = st.columns(4)
         
-        for file_name, stats in file_summary.iterrows():
-            col1, col2, col3 = st.columns([2, 1, 1])
-            with col1:
-                st.write(f"**{file_name}**")
-            with col2:
-                st.write(f"{stats['valid_count']}/{stats['total_count']} valid")
-            with col3:
-                rate_text = f"{stats['success_rate']:.1%}"
-                if stats['success_rate'] > 0.8:
-                    st.write(f"✅ {rate_text}")
-                elif stats['success_rate'] > 0.5:
-                    st.write(f"⚠️ {rate_text}")
-                else:
-                    st.write(f"❌ {rate_text}")
+        with col1:
+            st.metric("Total Input", overview['total_rows'])
+        
+        with col2:
+            st.metric("Qualified for USPS", overview['qualified_rows'])
+        
+        with col3:
+            st.metric("Actually Validated", validation_result['processed_records'])
+        
+        with col4:
+            st.metric("USPS Validated", validation_result['successful_validations'])
     
     # Results table
-    st.markdown("### 📊 Detailed Results")
+    st.markdown("### 📊 Detailed Validation Results")
     
     # Display the results table
     st.dataframe(results_df, use_container_width=True)
@@ -1224,9 +1332,9 @@ def display_enhanced_bulk_results(validation_result: Dict, pipeline_result: Dict
     with col1:
         csv_results = results_df.to_csv(index=False)
         st.download_button(
-            label="📥 Download Results (CSV)",
+            label="📥 Download Validation Results (CSV)",
             data=csv_results,
-            file_name=f"multi_file_validation_results{file_suffix}_{timestamp}.csv",
+            file_name=f"usps_validation_results{file_suffix}_{timestamp}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -1238,64 +1346,67 @@ def display_enhanced_bulk_results(validation_result: Dict, pipeline_result: Dict
             
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                # Main results
-                results_df.to_excel(writer, sheet_name='Validation Results', index=False)
+                # Main validation results
+                results_df.to_excel(writer, sheet_name='USPS Validation Results', index=False)
                 
-                # Pipeline summary
-                pipeline_summary_data = {
-                    'Metric': [
-                        'Files Processed', 'Total Source Rows', 'Standardized Rows',
-                        'Validated Rows', 'Successful Validations', 'Failed Validations',
-                        'Success Rate', 'Business Addresses', 'Residential Addresses',
-                        'Pipeline Duration (ms)', 'Standardization Time (ms)', 'Validation Time (ms)'
-                    ],
-                    'Value': [
-                        pipeline_result['summary']['files_processed'],
-                        pipeline_result['summary']['total_source_rows'],
-                        pipeline_result['summary']['standardized_rows'],
-                        pipeline_result['summary']['validated_rows'],
-                        pipeline_result['summary']['successful_validations'],
-                        pipeline_result['summary']['failed_validations'],
-                        f"{pipeline_result['summary']['successful_validations']/pipeline_result['summary']['validated_rows']:.1%}" if pipeline_result['summary']['validated_rows'] > 0 else "0%",
-                        business_count,
-                        residential_count,
-                        pipeline_result.get('pipeline_duration_ms', 0),
-                        pipeline_result['standardization'].get('processing_time_ms', 0),
-                        pipeline_result['validation'].get('processing_time_ms', 0)
-                    ]
-                }
-                summary_df = pd.DataFrame(pipeline_summary_data)
-                summary_df.to_excel(writer, sheet_name='Pipeline Summary', index=False)
+                # Qualification summary
+                if preview_result.get('success'):
+                    qual_overview = preview_result['overview']
+                    disqualified_preview = preview_result['disqualified_preview']
+                    
+                    # Summary sheet
+                    summary_data = {
+                        'Metric': [
+                            'Files Processed', 'Total Input Rows', 'Qualified for USPS', 'Disqualified',
+                            'Qualification Rate', 'Validated by USPS', 'USPS Success Rate',
+                            'Business Addresses', 'Residential Addresses',
+                            'Pipeline Duration (ms)', 'Standardization Time (ms)', 'Validation Time (ms)'
+                        ],
+                        'Value': [
+                            pipeline_result['summary']['files_processed'],
+                            qual_overview['total_rows'],
+                            qual_overview['qualified_rows'],
+                            qual_overview['disqualified_rows'],
+                            f"{qual_overview['qualification_rate']:.1%}",
+                            validation_result['successful_validations'],
+                            f"{validation_result['successful_validations']/validation_result['processed_records']:.1%}" if validation_result['processed_records'] > 0 else "0%",
+                            business_count,
+                            residential_count,
+                            pipeline_result.get('pipeline_duration_ms', 0),
+                            pipeline_result['standardization'].get('processing_time_ms', 0),
+                            pipeline_result['validation'].get('processing_time_ms', 0)
+                        ]
+                    }
+                    summary_df = pd.DataFrame(summary_data)
+                    summary_df.to_excel(writer, sheet_name='Pipeline Summary', index=False)
+                    
+                    # Error analysis for disqualified addresses
+                    if disqualified_preview['error_analysis']:
+                        error_data = []
+                        for error, count in disqualified_preview['error_analysis'].items():
+                            error_data.append({
+                                'Error Type': error,
+                                'Count': count,
+                                'Percentage': f"{(count/qual_overview['disqualified_rows'])*100:.1f}%" if qual_overview['disqualified_rows'] > 0 else "0%"
+                            })
+                        
+                        if error_data:
+                            error_df = pd.DataFrame(error_data)
+                            error_df.to_excel(writer, sheet_name='Disqualification Errors', index=False)
             
             excel_data = excel_buffer.getvalue()
             
             st.download_button(
-                label="📊 Download Complete Report (Excel)",
+                label="📊 Download Complete Pipeline Report (Excel)",
                 data=excel_data,
-                file_name=f"multi_file_complete_report{file_suffix}_{timestamp}.xlsx",
+                file_name=f"complete_pipeline_report{file_suffix}_{timestamp}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
         except ImportError:
             st.info("Excel download requires xlsxwriter. Install with: pip install xlsxwriter")
-    """Render monitoring dashboard"""
-    
-    st.markdown('''
-    <div class="glass-card">
-        <div class="section-header">System Monitoring</div>
-    </div>
-    ''', unsafe_allow_html=True)
-    
-    # Display some basic stats
-    stats = st.session_state.validation_stats
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Validations", stats['total_validations'])
-    with col2:
-        st.metric("Successful", stats['successful_validations'])
-    with col3:
-        st.metric("Failed", stats['failed_validations'])
+
+
 def render_complete_monitoring_dashboard():
     """Complete monitoring dashboard with advanced features"""
     
@@ -1352,7 +1463,7 @@ def render_complete_monitoring_dashboard():
         log_level = st.selectbox("Log Level", ["ALL", "ERROR", "WARNING", "INFO", "DEBUG"])
     
     with col2:
-        log_category = st.selectbox("Category", ["ALL", "VALIDATION", "UI", "CONFIG", "USPS_API", "BULK_VALIDATION", "STANDARDIZATION", "PIPELINE"])
+        log_category = st.selectbox("Category", ["ALL", "VALIDATION", "UI", "CONFIG", "USPS_API", "BULK_VALIDATION", "STANDARDIZATION", "PIPELINE", "QUALIFICATION"])
     
     with col3:
         log_minutes = st.selectbox("Time Range", [5, 15, 30, 60], index=1)
@@ -1431,7 +1542,9 @@ def render_complete_monitoring_dashboard():
             st.write(f"• Name validation: {'✅' if status['name_validation_available'] else '❌'}")
             st.write(f"• Address validation: {'✅' if status['address_validation_available'] else '❌'}")
             st.write(f"• Address standardization: {'✅' if status.get('address_standardization_available', False) else '❌'}")
+            st.write(f"• US qualification: {'✅' if status.get('us_qualification_available', False) else '❌'}")
             st.write(f"• Multi-file processing: {'✅' if status.get('multi_file_processing_available', False) else '❌'}")
+            st.write(f"• Preview generation: {'✅' if status.get('preview_generation_available', False) else '❌'}")
         
         with col2:
             st.write("**Configuration:**")
@@ -1444,19 +1557,16 @@ def render_complete_monitoring_dashboard():
         st.error(f"Could not get service status: {e}")
 
 
-# To use the complete monitoring dashboard, replace the monitoring tab code in main() with:
-# render_complete_monitoring_dashboard()
-
 def main():
-    """Main application"""
+    """Main application with enhanced qualification workflow"""
     st.set_page_config(
-        page_title="Name and Address Validator - Enhanced",
+        page_title="Enhanced Name and Address Validator",
         page_icon="🔍",
         layout="wide",
         initial_sidebar_state="collapsed"
     )
     
-    debug_monitor.log("INFO", "Enhanced application started", "SYSTEM")
+    debug_monitor.log("INFO", "Enhanced application with qualification started", "SYSTEM")
     
     # Apply enterprise styling
     apply_enterprise_saas_css()
@@ -1472,7 +1582,7 @@ def main():
     st.markdown('''
     <div class="enterprise-header">
         <div class="main-title">Enhanced Name and Address Validator</div>
-        <div class="subtitle">Multi-File Processing • Address Standardization • Powered by ML and USPS</div>
+        <div class="subtitle">Multi-File Processing • US Qualification • Address Standardization • Powered by ML and USPS</div>
     </div>
     ''', unsafe_allow_html=True)
     
@@ -1498,13 +1608,13 @@ def main():
         return
     
     # Main application tabs
-    tab1, tab2, tab3 = st.tabs(["Single Validation", "Multi-File Batch Processing", "Monitoring"])
+    tab1, tab2, tab3 = st.tabs(["Single Validation", "Enhanced Multi-File Processing", "Monitoring"])
     
     with tab1:
         render_single_validation()
     
     with tab2:
-        render_bulk_validation()
+        render_enhanced_bulk_validation()
     
     with tab3:
         render_complete_monitoring_dashboard()

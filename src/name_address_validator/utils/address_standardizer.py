@@ -1,6 +1,6 @@
 # src/name_address_validator/utils/address_standardizer.py
 """
-Address Format Standardizer - Handles multiple CSV formats and standardizes them
+Enhanced Address Format Standardizer with US Address Qualification and Filtering
 """
 
 import pandas as pd
@@ -12,7 +12,7 @@ import numpy as np
 
 class AddressFormatStandardizer:
     """
-    Standardizes various address CSV formats into a consistent format for USPS validation
+    Enhanced standardizer with US address qualification and filtering
     """
     
     def __init__(self, debug_callback=None):
@@ -76,6 +76,23 @@ class AddressFormatStandardizer:
             'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
             'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
             'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+        }
+        
+        # US State name to abbreviation mapping for conversion
+        self.state_name_to_abbr = {
+            'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR',
+            'california': 'CA', 'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE',
+            'florida': 'FL', 'georgia': 'GA', 'hawaii': 'HI', 'idaho': 'ID',
+            'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA', 'kansas': 'KS',
+            'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+            'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS',
+            'missouri': 'MO', 'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV',
+            'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
+            'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH', 'oklahoma': 'OK',
+            'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+            'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT',
+            'vermont': 'VT', 'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV',
+            'wisconsin': 'WI', 'wyoming': 'WY', 'district of columbia': 'DC'
         }
     
     def log(self, message: str, category: str = "STANDARDIZER"):
@@ -245,9 +262,96 @@ class AddressFormatStandardizer:
         self.log(f"🔧 Manual parse result: {result}")
         return result
     
+    def qualify_us_address(self, row: Dict) -> Dict:
+        """
+        Determine if an address qualifies as a valid US address for USPS validation
+        
+        Returns:
+            Dict with 'qualified', 'qualification_errors', 'qualification_warnings'
+        """
+        
+        street_address = str(row.get('street_address', '')).strip()
+        city = str(row.get('city', '')).strip()
+        state = str(row.get('state', '')).strip().upper()
+        zip_code = str(row.get('zip_code', '')).strip()
+        
+        errors = []
+        warnings = []
+        qualified = True
+        
+        # Check required fields
+        if not street_address:
+            errors.append("Missing street address")
+            qualified = False
+        elif len(street_address) < 3:
+            errors.append("Street address too short")
+            qualified = False
+        elif not re.search(r'\d', street_address):
+            warnings.append("No house number detected in street address")
+        
+        if not city:
+            errors.append("Missing city")
+            qualified = False
+        elif len(city) < 2:
+            errors.append("City name too short")
+            qualified = False
+        elif not re.match(r"^[a-zA-Z\s\-'\.]+$", city):
+            errors.append("City contains invalid characters")
+            qualified = False
+        
+        if not state:
+            errors.append("Missing state")
+            qualified = False
+        else:
+            # Try to convert full state name to abbreviation
+            state_lower = state.lower()
+            if state_lower in self.state_name_to_abbr:
+                state = self.state_name_to_abbr[state_lower]
+                # Update the row with corrected state
+                row['state'] = state
+            
+            if len(state) != 2:
+                errors.append("State must be 2-letter code")
+                qualified = False
+            elif state not in self.us_states:
+                errors.append(f"Invalid US state code: {state}")
+                qualified = False
+        
+        if not zip_code:
+            errors.append("Missing ZIP code")
+            qualified = False
+        else:
+            # Clean and validate ZIP code
+            zip_clean = re.sub(r'[^\d\-]', '', zip_code)
+            if not re.match(r'^\d{5}(-\d{4})?$', zip_clean):
+                errors.append("Invalid ZIP code format (must be 12345 or 12345-6789)")
+                qualified = False
+            elif zip_clean.startswith('00000'):
+                errors.append("Invalid ZIP code (cannot be all zeros)")
+                qualified = False
+            else:
+                # Update row with cleaned ZIP
+                row['zip_code'] = zip_clean
+        
+        # Check for PO Box addresses (warning, not disqualifying)
+        if re.search(r'\b(po|p\.o\.)\s*box\b', street_address, re.IGNORECASE):
+            warnings.append("PO Box address detected")
+        
+        # Check for business indicators
+        business_indicators = ['llc', 'inc', 'corp', 'ltd', 'company', 'co.', 'corporation']
+        if any(indicator in street_address.lower() for indicator in business_indicators):
+            warnings.append("Possible business address")
+        
+        return {
+            'qualified': qualified,
+            'qualification_errors': errors,
+            'qualification_warnings': warnings,
+            'qualification_score': 1.0 if qualified else 0.0
+        }
+    
     def standardize_dataframe(self, df: pd.DataFrame, file_name: str = "unknown") -> Tuple[pd.DataFrame, Dict]:
         """
-        Standardize a DataFrame to our standard format
+        Standardize a DataFrame to our standard format with US qualification
         """
         self.log(f"🚀 Starting standardization for {file_name} ({len(df)} rows, {len(df.columns)} columns)")
         
@@ -260,7 +364,13 @@ class AddressFormatStandardizer:
             'detected_mapping': column_mapping,
             'row_count': len(df),
             'standardization_errors': [],
-            'combined_address_parsed': False
+            'combined_address_parsed': False,
+            'qualification_summary': {
+                'total_rows': 0,
+                'qualified_rows': 0,
+                'disqualified_rows': 0,
+                'common_errors': {}
+            }
         }
         
         # Create standardized DataFrame
@@ -313,8 +423,59 @@ class AddressFormatStandardizer:
         # Clean and validate data
         standardized_df = self._clean_standardized_data(standardized_df, standardization_info)
         
+        # Add US qualification assessment
+        standardized_df = self._add_qualification_assessment(standardized_df, standardization_info)
+        
         self.log(f"✅ Standardization complete: {len(standardized_df)} rows standardized")
         return standardized_df, standardization_info
+    
+    def _add_qualification_assessment(self, df: pd.DataFrame, info: Dict) -> pd.DataFrame:
+        """Add US address qualification assessment to each row"""
+        
+        self.log("🎯 Assessing US address qualification for all rows")
+        
+        qualification_results = []
+        qualified_count = 0
+        error_counts = {}
+        
+        for idx, row in df.iterrows():
+            row_dict = row.to_dict()
+            qualification = self.qualify_us_address(row_dict)
+            
+            # Update the original row with any corrections made during qualification
+            for col in ['state', 'zip_code']:
+                if col in row_dict:
+                    df.loc[idx, col] = row_dict[col]
+            
+            qualification_results.append(qualification)
+            
+            if qualification['qualified']:
+                qualified_count += 1
+            
+            # Count error types
+            for error in qualification['qualification_errors']:
+                if error not in error_counts:
+                    error_counts[error] = 0
+                error_counts[error] += 1
+        
+        # Add qualification columns to DataFrame
+        df['us_qualified'] = [r['qualified'] for r in qualification_results]
+        df['qualification_errors'] = ['; '.join(r['qualification_errors']) if r['qualification_errors'] else '' for r in qualification_results]
+        df['qualification_warnings'] = ['; '.join(r['qualification_warnings']) if r['qualification_warnings'] else '' for r in qualification_results]
+        df['qualification_score'] = [r['qualification_score'] for r in qualification_results]
+        
+        # Update summary
+        info['qualification_summary'] = {
+            'total_rows': len(df),
+            'qualified_rows': qualified_count,
+            'disqualified_rows': len(df) - qualified_count,
+            'qualification_rate': qualified_count / len(df) if len(df) > 0 else 0,
+            'common_errors': error_counts
+        }
+        
+        self.log(f"🎯 Qualification complete: {qualified_count}/{len(df)} rows qualified ({qualified_count/len(df)*100:.1f}%)")
+        
+        return df
     
     def _clean_standardized_data(self, df: pd.DataFrame, info: Dict) -> pd.DataFrame:
         """Clean and validate standardized data"""
@@ -380,7 +541,7 @@ class AddressFormatStandardizer:
     
     def standardize_multiple_files(self, file_data_list: List[Tuple[pd.DataFrame, str]]) -> Tuple[pd.DataFrame, List[Dict]]:
         """
-        Standardize multiple CSV files and combine them
+        Standardize multiple CSV files and combine them with qualification assessment
         
         Args:
             file_data_list: List of (DataFrame, filename) tuples
@@ -422,21 +583,95 @@ class AddressFormatStandardizer:
             combined_df = pd.concat(standardized_dfs, ignore_index=True)
             self.log(f"🎉 Batch standardization complete: {len(combined_df)} total rows from {len(standardized_dfs)} files")
         else:
-            combined_df = pd.DataFrame(columns=list(self.standard_columns.keys()) + ['source_file', 'source_row_number'])
+            combined_df = pd.DataFrame(columns=list(self.standard_columns.keys()) + ['source_file', 'source_row_number', 'us_qualified', 'qualification_errors', 'qualification_warnings', 'qualification_score'])
             self.log("⚠️ No files were successfully standardized")
         
         return combined_df, all_standardization_info
     
+    def get_qualification_summary(self, standardized_df: pd.DataFrame, standardization_info_list: List[Dict]) -> Dict:
+        """Generate comprehensive qualification summary"""
+        
+        if standardized_df.empty:
+            return {
+                'total_files': len(standardization_info_list),
+                'total_rows': 0,
+                'qualified_rows': 0,
+                'disqualified_rows': 0,
+                'qualification_rate': 0,
+                'common_errors': {},
+                'files_summary': []
+            }
+        
+        # Overall qualification stats
+        total_rows = len(standardized_df)
+        qualified_rows = len(standardized_df[standardized_df['us_qualified'] == True])
+        disqualified_rows = total_rows - qualified_rows
+        
+        # Error analysis
+        all_errors = []
+        for errors_str in standardized_df['qualification_errors']:
+            if errors_str:
+                all_errors.extend(errors_str.split('; '))
+        
+        error_counts = {}
+        for error in all_errors:
+            error_counts[error] = error_counts.get(error, 0) + 1
+        
+        # Per-file summary
+        files_summary = []
+        for info in standardization_info_list:
+            if 'error' not in info and 'qualification_summary' in info:
+                files_summary.append({
+                    'file_name': info['file_name'],
+                    'total_rows': info['qualification_summary']['total_rows'],
+                    'qualified_rows': info['qualification_summary']['qualified_rows'],
+                    'qualification_rate': info['qualification_summary']['qualification_rate'],
+                    'common_errors': info['qualification_summary']['common_errors']
+                })
+        
+        return {
+            'total_files': len(standardization_info_list),
+            'total_rows': total_rows,
+            'qualified_rows': qualified_rows,
+            'disqualified_rows': disqualified_rows,
+            'qualification_rate': qualified_rows / total_rows if total_rows > 0 else 0,
+            'common_errors': error_counts,
+            'files_summary': files_summary,
+            'ready_for_usps': qualified_rows > 0
+        }
+    
+    def filter_qualified_addresses(self, standardized_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Split standardized data into qualified and disqualified addresses
+        
+        Returns:
+            Tuple of (qualified_df, disqualified_df)
+        """
+        
+        if standardized_df.empty:
+            return pd.DataFrame(), pd.DataFrame()
+        
+        qualified_df = standardized_df[standardized_df['us_qualified'] == True].copy()
+        disqualified_df = standardized_df[standardized_df['us_qualified'] == False].copy()
+        
+        self.log(f"🎯 Filtered addresses: {len(qualified_df)} qualified, {len(disqualified_df)} disqualified")
+        
+        return qualified_df, disqualified_df
+    
     def get_standardization_summary(self, standardization_info_list: List[Dict]) -> Dict:
-        """Generate a summary of standardization results"""
+        """Generate a summary of standardization results including qualification"""
         
         summary = {
             'total_files_processed': len(standardization_info_list),
             'successful_files': 0,
             'failed_files': 0,
             'total_rows_processed': 0,
+            'total_qualified_rows': 0,
+            'total_disqualified_rows': 0,
+            'overall_qualification_rate': 0,
             'files_with_combined_addresses': 0,
             'common_errors': {},
+            'common_qualification_errors': {},
             'column_mapping_patterns': {},
             'files_details': []
         }
@@ -452,6 +687,15 @@ class AddressFormatStandardizer:
             else:
                 summary['successful_files'] += 1
                 summary['total_rows_processed'] += info['row_count']
+                
+                if 'qualification_summary' in info:
+                    qual_summary = info['qualification_summary']
+                    summary['total_qualified_rows'] += qual_summary['qualified_rows']
+                    summary['total_disqualified_rows'] += qual_summary['disqualified_rows']
+                    
+                    # Track qualification errors
+                    for error, count in qual_summary['common_errors'].items():
+                        summary['common_qualification_errors'][error] = summary['common_qualification_errors'].get(error, 0) + count
                 
                 if info.get('combined_address_parsed', False):
                     summary['files_with_combined_addresses'] += 1
@@ -475,8 +719,13 @@ class AddressFormatStandardizer:
                     'file': info['file_name'],
                     'status': 'success',
                     'rows': info['row_count'],
+                    'qualified': qual_summary['qualified_rows'] if 'qualification_summary' in info else 0,
                     'combined_address': info.get('combined_address_parsed', False),
                     'errors': len(info.get('standardization_errors', []))
                 })
+        
+        # Calculate overall qualification rate
+        if summary['total_rows_processed'] > 0:
+            summary['overall_qualification_rate'] = summary['total_qualified_rows'] / summary['total_rows_processed']
         
         return summary

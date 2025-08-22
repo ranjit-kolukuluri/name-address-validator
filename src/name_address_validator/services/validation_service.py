@@ -1,6 +1,6 @@
 # src/name_address_validator/services/validation_service.py
 """
-Enhanced validation service with address format standardization for multiple CSV files
+Enhanced validation service with address format standardization and US qualification filtering
 """
 
 import time
@@ -17,7 +17,7 @@ from ..utils.address_standardizer import AddressFormatStandardizer
 
 class ValidationService:
     """
-    Enhanced validation service with address format standardization
+    Enhanced validation service with address format standardization and qualification filtering
     """
     
     def __init__(self, debug_callback=None):
@@ -136,25 +136,316 @@ class ValidationService:
         self.debug_callback(f"🏁 Single record validation completed ({total_duration}ms)", "SERVICE")
         return results
     
-    def standardize_csv_files(self, file_data_list: List[Tuple[pd.DataFrame, str]]) -> Dict:
+    def standardize_and_qualify_csv_files(self, file_data_list: List[Tuple[pd.DataFrame, str]]) -> Dict:
         """
-        Standardize multiple CSV files with various address formats
+        Standardize multiple CSV files and assess US qualification (NEW METHOD)
         
         Args:
             file_data_list: List of (DataFrame, filename) tuples
             
         Returns:
-            Dict with standardization results
+            Dict with standardization and qualification results
         """
-        self.debug_callback(f"📦 Starting CSV standardization for {len(file_data_list)} files", "STANDARDIZATION")
+        self.debug_callback(f"📦 Starting CSV standardization and qualification for {len(file_data_list)} files", "STANDARDIZATION")
+        start_time = time.time()
+        
+        try:
+            # Use address standardizer to process files with qualification
+            standardized_df, standardization_info = self.address_standardizer.standardize_multiple_files(file_data_list)
+            
+            # Get comprehensive summary including qualification
+            summary = self.address_standardizer.get_standardization_summary(standardization_info)
+            qualification_summary = self.address_standardizer.get_qualification_summary(standardized_df, standardization_info)
+            
+            # Split qualified and disqualified addresses
+            qualified_df, disqualified_df = self.address_standardizer.filter_qualified_addresses(standardized_df)
+            
+            duration = int((time.time() - start_time) * 1000)
+            performance_tracker.track("csv_standardization_qualification", duration, summary['successful_files'] > 0)
+            
+            result = {
+                'success': True,
+                'standardized_data': standardized_df,
+                'qualified_data': qualified_df,
+                'disqualified_data': disqualified_df,
+                'standardization_info': standardization_info,
+                'summary': summary,
+                'qualification_summary': qualification_summary,
+                'processing_time_ms': duration,
+                'total_rows': len(standardized_df),
+                'qualified_rows': len(qualified_df),
+                'disqualified_rows': len(disqualified_df)
+            }
+            
+            self.debug_callback(f"✅ Standardization and qualification completed ({duration}ms): {len(qualified_df)}/{len(standardized_df)} rows qualified", "STANDARDIZATION")
+            return result
+            
+        except Exception as e:
+            error_msg = f"CSV standardization and qualification failed: {str(e)}"
+            self.debug_callback(f"❌ {error_msg}", "STANDARDIZATION")
+            
+            duration = int((time.time() - start_time) * 1000)
+            performance_tracker.track("csv_standardization_qualification", duration, False)
+            
+            return {
+                'success': False,
+                'error': error_msg,
+                'processing_time_ms': duration,
+                'total_rows': 0,
+                'qualified_rows': 0,
+                'disqualified_rows': 0
+            }
+    
+    def validate_qualified_addresses_only(self, qualified_df: pd.DataFrame, include_suggestions: bool = True, 
+                                        max_records: Optional[int] = None) -> Dict:
+        """
+        Validate only qualified US addresses (NEW METHOD)
+        
+        Args:
+            qualified_df: DataFrame with only qualified US addresses
+            include_suggestions: Whether to include name/address suggestions
+            max_records: Maximum number of records to process
+            
+        Returns:
+            Dict with validation results for qualified addresses only
+        """
+        
+        self.debug_callback(f"🎯 Starting validation of qualified addresses only ({len(qualified_df)} records)", "VALIDATION")
+        
+        if qualified_df.empty:
+            self.debug_callback("⚠️ No qualified addresses to validate", "VALIDATION")
+            return {
+                'timestamp': datetime.now(),
+                'total_records': 0,
+                'processed_records': 0,
+                'successful_validations': 0,
+                'failed_validations': 0,
+                'processing_time_ms': 0,
+                'records': [],
+                'summary': {
+                    'business_addresses': 0,
+                    'residential_addresses': 0,
+                    'unknown_addresses': 0,
+                    'corrections_made': 0
+                }
+            }
+        
+        # Convert qualified DataFrame to records list (removing qualification columns for validation)
+        validation_columns = ['first_name', 'last_name', 'street_address', 'city', 'state', 'zip_code', 'source_file', 'source_row_number']
+        records = qualified_df[validation_columns].to_dict('records')
+        
+        # Run batch validation on qualified addresses only
+        return self.validate_batch_records(
+            records=records,
+            include_suggestions=include_suggestions,
+            max_records=max_records,
+            source_info={'qualified_addresses_only': True, 'original_qualified_count': len(qualified_df)}
+        )
+    
+    def generate_comprehensive_preview(self, standardization_result: Dict) -> Dict:
+        """
+        Generate comprehensive preview of standardization and qualification results (NEW METHOD)
+        
+        Args:
+            standardization_result: Result from standardize_and_qualify_csv_files
+            
+        Returns:
+            Dict with preview data formatted for UI display
+        """
+        
+        self.debug_callback("📋 Generating comprehensive preview", "PREVIEW")
+        
+        if not standardization_result['success']:
+            return {
+                'success': False,
+                'error': standardization_result.get('error', 'Unknown error')
+            }
+        
+        standardized_df = standardization_result['standardized_data']
+        qualified_df = standardization_result['qualified_data']
+        disqualified_df = standardization_result['disqualified_data']
+        qualification_summary = standardization_result['qualification_summary']
+        
+        # Generate preview samples
+        qualified_sample = qualified_df.head(10) if not qualified_df.empty else pd.DataFrame()
+        disqualified_sample = disqualified_df.head(10) if not disqualified_df.empty else pd.DataFrame()
+        
+        # Error analysis
+        error_analysis = {}
+        if not disqualified_df.empty and 'qualification_errors' in disqualified_df.columns:
+            all_errors = []
+            for errors_str in disqualified_df['qualification_errors']:
+                if errors_str:
+                    all_errors.extend(errors_str.split('; '))
+            
+            for error in all_errors:
+                error_analysis[error] = error_analysis.get(error, 0) + 1
+        
+        # File-by-file breakdown
+        file_breakdown = {}
+        for file_info in qualification_summary.get('files_summary', []):
+            file_breakdown[file_info['file_name']] = {
+                'total': file_info['total_rows'],
+                'qualified': file_info['qualified_rows'],
+                'rate': file_info['qualification_rate']
+            }
+        
+        preview_data = {
+            'success': True,
+            'overview': {
+                'total_files': qualification_summary['total_files'],
+                'total_rows': qualification_summary['total_rows'],
+                'qualified_rows': qualification_summary['qualified_rows'],
+                'disqualified_rows': qualification_summary['disqualified_rows'],
+                'qualification_rate': qualification_summary['qualification_rate'],
+                'ready_for_usps': qualification_summary['ready_for_usps']
+            },
+            'qualified_preview': {
+                'count': len(qualified_df),
+                'sample_data': qualified_sample.to_dict('records') if not qualified_sample.empty else [],
+                'columns': list(qualified_df.columns) if not qualified_df.empty else []
+            },
+            'disqualified_preview': {
+                'count': len(disqualified_df),
+                'sample_data': disqualified_sample.to_dict('records') if not disqualified_sample.empty else [],
+                'error_analysis': error_analysis,
+                'top_errors': sorted(error_analysis.items(), key=lambda x: x[1], reverse=True)[:5]
+            },
+            'file_breakdown': file_breakdown,
+            'standardization_info': standardization_result['standardization_info']
+        }
+        
+        self.debug_callback(f"✅ Preview generated: {len(qualified_df)} qualified, {len(disqualified_df)} disqualified", "PREVIEW")
+        return preview_data
+    
+    def process_complete_pipeline_with_preview(self, file_data_list: List[Tuple[pd.DataFrame, str]], 
+                                            include_suggestions: bool = True, max_records: Optional[int] = None) -> Dict:
+        """
+        Complete pipeline with standardization preview and qualified-only validation (NEW METHOD)
+        
+        Args:
+            file_data_list: List of (DataFrame, filename) tuples
+            include_suggestions: Whether to include suggestions in validation
+            max_records: Maximum records to validate (applied to qualified addresses only)
+            
+        Returns:
+            Dict with complete results including preview and validation
+        """
+        
+        self.debug_callback(f"🚀 Starting complete pipeline with preview for {len(file_data_list)} files", "PIPELINE")
+        pipeline_start = time.time()
+        
+        try:
+            # Step 1: Standardize and qualify addresses
+            self.debug_callback("📋 Step 1: Standardizing and qualifying addresses", "PIPELINE")
+            standardization_result = self.standardize_and_qualify_csv_files(file_data_list)
+            
+            if not standardization_result['success']:
+                return {
+                    'success': False,
+                    'error': 'Standardization failed: ' + standardization_result.get('error', 'Unknown error'),
+                    'stage': 'standardization'
+                }
+            
+            # Step 2: Generate comprehensive preview
+            self.debug_callback("📋 Step 2: Generating comprehensive preview", "PIPELINE")
+            preview_result = self.generate_comprehensive_preview(standardization_result)
+            
+            if not preview_result['success']:
+                return {
+                    'success': False,
+                    'error': 'Preview generation failed: ' + preview_result.get('error', 'Unknown error'),
+                    'stage': 'preview'
+                }
+            
+            # Step 3: Validate qualified addresses only
+            qualified_df = standardization_result['qualified_data']
+            
+            if qualified_df.empty:
+                self.debug_callback("⚠️ No qualified addresses to validate", "PIPELINE")
+                validation_result = {
+                    'timestamp': datetime.now(),
+                    'total_records': 0,
+                    'processed_records': 0,
+                    'successful_validations': 0,
+                    'failed_validations': 0,
+                    'processing_time_ms': 0,
+                    'records': [],
+                    'summary': {
+                        'business_addresses': 0,
+                        'residential_addresses': 0,
+                        'unknown_addresses': 0,
+                        'corrections_made': 0
+                    }
+                }
+            else:
+                self.debug_callback(f"🔍 Step 3: Validating {len(qualified_df)} qualified addresses", "PIPELINE")
+                validation_result = self.validate_qualified_addresses_only(
+                    qualified_df=qualified_df,
+                    include_suggestions=include_suggestions,
+                    max_records=max_records
+                )
+            
+            # Step 4: Combine all results
+            total_duration = int((time.time() - pipeline_start) * 1000)
+            performance_tracker.track("complete_pipeline_with_preview", total_duration, True)
+            
+            combined_result = {
+                'success': True,
+                'pipeline_duration_ms': total_duration,
+                'standardization': standardization_result,
+                'preview': preview_result,
+                'validation': validation_result,
+                'summary': {
+                    'files_processed': len(file_data_list),
+                    'total_source_rows': sum(len(df) for df, _ in file_data_list),
+                    'standardized_rows': standardization_result['total_rows'],
+                    'qualified_rows': standardization_result['qualified_rows'],
+                    'disqualified_rows': standardization_result['disqualified_rows'],
+                    'validated_rows': validation_result['processed_records'],
+                    'successful_validations': validation_result['successful_validations'],
+                    'failed_validations': validation_result['failed_validations'],
+                    'qualification_rate': standardization_result['qualification_summary']['qualification_rate']
+                }
+            }
+            
+            self.debug_callback(f"🎉 Complete pipeline with preview finished ({total_duration}ms)", "PIPELINE")
+            return combined_result
+            
+        except Exception as e:
+            error_msg = f"Pipeline with preview failed: {str(e)}"
+            self.debug_callback(f"❌ {error_msg}", "PIPELINE")
+            
+            total_duration = int((time.time() - pipeline_start) * 1000)
+            performance_tracker.track("complete_pipeline_with_preview", total_duration, False)
+            
+            return {
+                'success': False,
+                'error': error_msg,
+                'pipeline_duration_ms': total_duration,
+                'stage': 'unknown'
+            }
+    
+    # LEGACY METHODS (keeping for backward compatibility)
+    
+    def standardize_csv_files(self, file_data_list: List[Tuple[pd.DataFrame, str]]) -> Dict:
+        """
+        Legacy method: Standardize multiple CSV files (no qualification)
+        """
+        self.debug_callback(f"📦 Starting legacy CSV standardization for {len(file_data_list)} files", "STANDARDIZATION")
         start_time = time.time()
         
         try:
             # Use address standardizer to process files
             standardized_df, standardization_info = self.address_standardizer.standardize_multiple_files(file_data_list)
             
-            # Get summary
-            summary = self.address_standardizer.get_standardization_summary(standardization_info)
+            # Get summary (legacy format without qualification details)
+            summary = {
+                'successful_files': len([info for info in standardization_info if 'error' not in info]),
+                'total_rows_processed': len(standardized_df),
+                'files_with_combined_addresses': len([info for info in standardization_info if info.get('combined_address_parsed', False)]),
+                'common_errors': {}
+            }
             
             duration = int((time.time() - start_time) * 1000)
             performance_tracker.track("csv_standardization", duration, summary['successful_files'] > 0)
@@ -168,11 +459,11 @@ class ValidationService:
                 'total_rows': len(standardized_df)
             }
             
-            self.debug_callback(f"✅ CSV standardization completed ({duration}ms): {len(standardized_df)} rows", "STANDARDIZATION")
+            self.debug_callback(f"✅ Legacy CSV standardization completed ({duration}ms): {len(standardized_df)} rows", "STANDARDIZATION")
             return result
             
         except Exception as e:
-            error_msg = f"CSV standardization failed: {str(e)}"
+            error_msg = f"Legacy CSV standardization failed: {str(e)}"
             self.debug_callback(f"❌ {error_msg}", "STANDARDIZATION")
             
             duration = int((time.time() - start_time) * 1000)
@@ -189,15 +480,6 @@ class ValidationService:
                              max_records: Optional[int] = None, source_info: Optional[Dict] = None) -> Dict:
         """
         Enhanced batch validation with standardization support
-        
-        Args:
-            records: List of dicts with keys: first_name, last_name, street_address, city, state, zip_code
-            include_suggestions: Whether to include name/address suggestions
-            max_records: Maximum number of records to process
-            source_info: Optional info about data source (files, standardization etc.)
-            
-        Returns:
-            Dict with batch validation results
         """
         
         self.debug_callback(f"📦 Starting batch validation of {len(records)} records", "SERVICE")
@@ -382,15 +664,6 @@ class ValidationService:
                                      max_records: Optional[int] = None, standardization_info: Optional[List[Dict]] = None) -> Dict:
         """
         Validate already standardized CSV data
-        
-        Args:
-            standardized_df: Standardized DataFrame with consistent column format
-            include_suggestions: Whether to include suggestions
-            max_records: Maximum records to process
-            standardization_info: Info about the standardization process
-            
-        Returns:
-            Dict with validation results
         """
         
         self.debug_callback(f"🎯 Starting validation of standardized data ({len(standardized_df)} rows)", "SERVICE")
@@ -417,22 +690,14 @@ class ValidationService:
     def process_multiple_csv_files(self, file_data_list: List[Tuple[pd.DataFrame, str]], 
                                  include_suggestions: bool = True, max_records: Optional[int] = None) -> Dict:
         """
-        Complete pipeline: standardize multiple CSV files and validate them
-        
-        Args:
-            file_data_list: List of (DataFrame, filename) tuples
-            include_suggestions: Whether to include suggestions in validation
-            max_records: Maximum records to process for validation
-            
-        Returns:
-            Dict with complete results including standardization and validation
+        Legacy method: Complete pipeline without qualification preview
         """
         
-        self.debug_callback(f"🚀 Starting complete pipeline for {len(file_data_list)} files", "PIPELINE")
+        self.debug_callback(f"🚀 Starting legacy pipeline for {len(file_data_list)} files", "PIPELINE")
         pipeline_start = time.time()
         
         try:
-            # Step 1: Standardize CSV files
+            # Step 1: Standardize CSV files (legacy method)
             self.debug_callback("📋 Step 1: Standardizing CSV files", "PIPELINE")
             standardization_result = self.standardize_csv_files(file_data_list)
             
@@ -476,11 +741,11 @@ class ValidationService:
                 }
             }
             
-            self.debug_callback(f"🎉 Complete pipeline finished ({total_duration}ms)", "PIPELINE")
+            self.debug_callback(f"🎉 Legacy pipeline finished ({total_duration}ms)", "PIPELINE")
             return combined_result
             
         except Exception as e:
-            error_msg = f"Pipeline failed: {str(e)}"
+            error_msg = f"Legacy pipeline failed: {str(e)}"
             self.debug_callback(f"❌ {error_msg}", "PIPELINE")
             
             total_duration = int((time.time() - pipeline_start) * 1000)
@@ -548,7 +813,9 @@ class ValidationService:
             'name_validation_available': True,
             'address_validation_available': self.is_address_validation_available(),
             'address_standardization_available': True,
+            'us_qualification_available': True,
             'multi_file_processing_available': True,
+            'preview_generation_available': True,
             'usps_configured': self.address_validator is not None,
             'performance_tracking': True,
             'debug_logging': True,
